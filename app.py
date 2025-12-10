@@ -159,20 +159,18 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
                     if '부서명' not in df_dept_new.columns:
                         st.error("필수 컬럼 '부서명'이 없습니다.")
                     else:
-                        # 1. 데이터 정제 (옵션에 없는 값 처리)
                         df_dept_new = sanitize_config_df(df_dept_new)
-                        
-                        # 2. 기존 데이터와 병합 (부서명 기준 중복 제거 - 덮어쓰기)
                         current_df = st.session_state.dept_config
-                        
-                        # 필요한 컬럼만 추출
                         cols = ['부서명', '특별교육과목1', '특별교육과목2', '유해인자']
-                        df_merged = pd.concat([current_df[cols], df_dept_new[cols]], ignore_index=True)
                         
-                        # 중복된 부서명 제거 (나중에 들어온 것이 남음 = 업데이트 효과)
+                        # 기존에 없는 컬럼은 기본값 채우기
+                        for c in cols:
+                            if c not in df_dept_new.columns:
+                                df_dept_new[c] = "해당없음" if "특별" in c else "없음"
+
+                        df_merged = pd.concat([current_df[cols], df_dept_new[cols]], ignore_index=True)
                         df_merged = df_merged.drop_duplicates(subset=['부서명'], keep='last')
                         
-                        # 3. 정렬 순서 재부여
                         df_merged.reset_index(drop=True, inplace=True)
                         df_merged.insert(0, '정렬순서', range(1, len(df_merged) + 1))
                         
@@ -186,12 +184,19 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
     st.caption("부서 순서를 변경하고, 각 부서에 해당하는 특별교육 및 유해인자를 설정하세요.")
 
     # 1. 순서 변경 UI
+    # [핵심 수정] 정렬순서 컬럼을 강제로 숫자로 변환 (TypeError 방지)
+    st.session_state.dept_config['정렬순서'] = pd.to_numeric(st.session_state.dept_config['정렬순서'], errors='coerce').fillna(0).astype(int)
+    
     df_config = st.session_state.dept_config.sort_values('정렬순서')
+    
     with st.container(border=True):
         for idx, row in df_config.iterrows():
             c1, c2, c3 = st.columns([8, 1, 1], gap="small", vertical_alignment="center")
             with c1: st.markdown(f"**{row['정렬순서']}. {row['부서명']}**")
-            current_order = row['정렬순서']
+            
+            # 여기서 int로 확실하게 변환된 값을 사용
+            current_order = int(row['정렬순서'])
+            
             with c2:
                 if current_order > 1:
                     if st.button("⬆️", key=f"up_{idx}"):
@@ -483,4 +488,3 @@ with tab5:
         }
         safe_update_from_editor(target[["성명", "부서", "유해인자", "검진단계", "최근_특수검진일", "다음_특수검진일", "상태"]], "editor_health", cols_config)
     else: st.info("대상자가 없습니다.")
-
