@@ -128,10 +128,6 @@ for col in ['정렬순서', '부서명', '특별교육과목1', '특별교육과
 
 SPECIAL_EDU_OPTIONS = [
     "해당없음",
-    "아크용접 등 화기작업", 
-    "고압 전기 취급 작업", 
-    "밀폐공간 내부 작업", 
-    "그라인더 작업",
     "4. 폭발성·물반응성·자기반응성·자기발열성 물질, 자연발화성 액체·고체 및 인화성 액체의 제조 또는 취급작업",
     "35. 허가 및 관리 대상 유해물질의 제조 또는 취급작업"
 ]
@@ -557,3 +553,4 @@ with tab5:
                 if not idx.empty:
                     st.session_state.df.loc[idx, cols_to_update] = row[cols_to_update]
             st.rerun()
+
