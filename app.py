@@ -45,13 +45,16 @@ SPECIAL_EDU_OPTIONS = [
 
 def sanitize_config_df(df):
     target_cols = ['특별교육과목1', '특별교육과목2']
+    # 없는 컬럼 생성
     for col in target_cols:
         if col not in df.columns:
             df[col] = "해당없음"
             
     for col in target_cols:
         if col in df.columns:
+            # 문자열 변환 및 공백 제거
             df[col] = df[col].astype(str).str.strip()
+            # [중요] 옵션 리스트에 없는 값은 '해당없음'으로 처리하되, nan은 확실히 처리
             df[col] = df[col].apply(lambda x: x if x in SPECIAL_EDU_OPTIONS else "해당없음")
             
     if '유해인자' not in df.columns:
@@ -110,7 +113,7 @@ def load_all_from_github():
         date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
         for col in date_cols:
             if col in loaded_data.columns:
-                loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce').dt.date
+                loaded_data[col] = pd.to_datetime(loaded_data[col].astype(str), errors='coerce').dt.date
     except: pass
     try:
         contents = repo.get_contents(CONFIG_FILE)
@@ -143,7 +146,7 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
     
     with st.popover("📂 부서 설정 일괄 등록 (Excel/CSV)"):
         st.markdown("##### 부서 설정 파일 업로드")
-        st.caption("필수 컬럼: **부서명** (나머지는 자동 채움)")
+        st.caption("팁: 엑셀 헤더에 **'특별교육 1'**, **'특별교육 2'**라고 적어도 자동으로 인식합니다.")
         dept_file = st.file_uploader("파일 선택", type=['csv', 'xlsx'], key="dept_uploader")
         
         if dept_file:
@@ -159,17 +162,31 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
                     if '부서명' not in df_dept_new.columns:
                         st.error("필수 컬럼 '부서명'이 없습니다.")
                     else:
+                        # [핵심 수정] 컬럼명 유연하게 처리 (사용자가 '특별교육 1'로 적어도 인식하게)
+                        col_rename_map = {
+                            '특별교육 1': '특별교육과목1',
+                            '특별교육1': '특별교육과목1',
+                            '특별교육 2': '특별교육과목2',
+                            '특별교육2': '특별교육과목2'
+                        }
+                        df_dept_new = df_dept_new.rename(columns=col_rename_map)
+
+                        # 데이터 정제
                         df_dept_new = sanitize_config_df(df_dept_new)
+                        
                         current_df = st.session_state.dept_config
                         cols = ['부서명', '특별교육과목1', '특별교육과목2', '유해인자']
                         
+                        # 기존에 없는 컬럼은 기본값 채우기
                         for c in cols:
                             if c not in df_dept_new.columns:
                                 df_dept_new[c] = "해당없음" if "특별" in c else "없음"
 
+                        # 데이터 병합 (새로운 설정으로 덮어쓰기)
                         df_merged = pd.concat([current_df[cols], df_dept_new[cols]], ignore_index=True)
                         df_merged = df_merged.drop_duplicates(subset=['부서명'], keep='last')
                         
+                        # 순서 재정렬
                         df_merged.reset_index(drop=True, inplace=True)
                         df_merged.insert(0, '정렬순서', range(1, len(df_merged) + 1))
                         
@@ -191,7 +208,6 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
             c1, c2, c3 = st.columns([8, 1, 1], gap="small", vertical_alignment="center")
             with c1: st.markdown(f"**{row['정렬순서']}. {row['부서명']}**")
             
-            # [수정] TypeError 방지 (int 변환)
             current_order = int(row['정렬순서'])
             
             with c2:
@@ -262,7 +278,7 @@ for col in required_columns:
 df = st.session_state.df.copy()
 today = date.today()
 
-# 날짜 컬럼 강제 변환 (안전하게)
+# 날짜 컬럼 강제 변환
 date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
 for col in date_cols:
     if col in df.columns:
@@ -389,7 +405,6 @@ with st.sidebar:
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 입사자", "⚠️ 특별교육", "🏥 특수건강검진"])
 
 def safe_update_from_editor(subset_view, editor_key, visible_cols):
-    # [수정] 번호를 무조건 1부터 생성하여 붙임
     view_with_no = subset_view.copy()
     view_with_no.insert(0, "No", range(1, len(view_with_no) + 1))
     
