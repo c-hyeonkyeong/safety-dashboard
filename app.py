@@ -104,13 +104,11 @@ with st.sidebar:
             loaded_data = pd.read_csv(io.StringIO(csv_string))
             
             # [핵심] 불러온 데이터의 날짜 컬럼을 확실하게 date 객체로 변환
-            # 이 부분이 없으면 불러온 뒤 에디터에서 날짜가 안 보이거나 깨짐
             date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
             for col in date_cols:
                 if col in loaded_data.columns:
                     loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce').dt.date
             
-            # 검진단계 컬럼이 없으면 기본값으로 생성
             if '검진단계' not in loaded_data.columns:
                 loaded_data['검진단계'] = "배치전(미실시)"
             else:
@@ -184,7 +182,6 @@ with st.sidebar:
     with c1:
         if st.button("📂 불러오기"):
             ld, lc = load_all_from_github()
-            # [중요] 불러온 데이터가 있으면 세션에 확실히 반영
             if ld is not None: 
                 st.session_state.df_final = ld
                 st.toast("데이터 불러오기 성공!", icon="✅")
@@ -194,7 +191,7 @@ with st.sidebar:
         if st.button("💾 저장하기", type="primary"):
             save_all_to_github(st.session_state.df_final, st.session_state.dept_config_final)
 
-    # 데이터 초기화 (처음 실행 시)
+    # 데이터 초기화
     if 'df_final' not in st.session_state:
         data = {
             '성명': ['김철수', '이영희', '박신규', '최신규', '정전기', '강폐기'],
@@ -267,7 +264,6 @@ with st.sidebar:
             "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES)
         }
     )
-    # 사이드바 에디터에서 수정된 내용 즉시 반영
     if not st.session_state.df_final.equals(edited_df):
         st.session_state.df_final = edited_df
 
@@ -287,7 +283,7 @@ df['특별교육_과목1'] = df['부서'].map(DEPT_S1).fillna("설정필요")
 df['특별교육_과목2'] = df['부서'].map(DEPT_S2).fillna("해당없음")
 df['유해인자'] = df['부서'].map(DEPT_FAC).fillna("없음")
 
-# [요청 반영] 유해인자가 '없음'이면 특수검진 대상 강제 해제
+# 유해인자가 '없음'이면 특수검진 대상 강제 해제
 mask_no_factor = df['유해인자'].isin(['없음', '', '해당없음'])
 df.loc[mask_no_factor, '특수검진_대상'] = False
 
@@ -301,11 +297,14 @@ df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce'
 df['입사연도'] = df['입사일_dt'].dt.year
 df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
 
+# [수정] 직무교육일 계산 로직 강화 (공백 제거 후 비교)
 df['다음_직무교육일'] = None
-df.loc[df['직책']=='안전보건관리책임자', '다음_직무교육일'] = df['최근_직무교육일'].apply(lambda x: add_days(x, 730))
-df.loc[df['직책']=='관리감독자', '다음_직무교육일'] = df['최근_직무교육일'].apply(lambda x: add_days(x, 365))
-mask_waste = df['직책'].astype(str).str.strip() == '폐기물담당자'
-df.loc[mask_waste, '다음_직무교육일'] = df[mask_waste]['최근_직무교육일'].apply(lambda x: add_days(x, 1095))
+# 직책 공백 제거
+df['직책_clean'] = df['직책'].astype(str).str.strip()
+
+df.loc[df['직책_clean']=='안전보건관리책임자', '다음_직무교육일'] = df['최근_직무교육일'].apply(lambda x: add_days(x, 730))
+df.loc[df['직책_clean']=='관리감독자', '다음_직무교육일'] = df['최근_직무교육일'].apply(lambda x: add_days(x, 365))
+df.loc[df['직책_clean']=='폐기물담당자', '다음_직무교육일'] = df['최근_직무교육일'].apply(lambda x: add_days(x, 1095))
 
 def calc_next_health(row):
     if not row.get('특수검진_대상', True): return None 
