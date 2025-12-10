@@ -7,13 +7,12 @@ import io
 # --- [1. 시스템 설정] ---
 st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️")
 
-# CSS로 디자인 디테일 잡기 (버튼 정렬, 폰트 강조, 줄 간격 축소)
+# CSS로 디자인 디테일 잡기
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
     .st-emotion-cache-16idsys p {font-size: 1rem;}
     
-    /* 버튼 스타일 깔끔하게 & 컴팩트하게 */
     div.stButton > button {
         border-radius: 6px;
         height: 32px;
@@ -22,14 +21,12 @@ st.markdown("""
         width: 100%;
     }
     
-    /* 카드 박스 스타일 */
     div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlockBorderWrapper"] {
         background-color: #f9f9f9;
         border-radius: 10px;
         padding: 10px;
     }
 
-    /* 관리자 설정 리스트 텍스트 수직 정렬 및 여백 제거 */
     div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stMarkdownContainer"] p {
         margin-bottom: 0px;
         line-height: 32px;
@@ -66,7 +63,6 @@ def save_all_to_github(data_df, config_df):
         return
     
     try:
-        # 데이터 저장
         data_content = data_df.to_csv(index=False)
         try:
             contents = repo.get_contents(DATA_FILE)
@@ -74,7 +70,6 @@ def save_all_to_github(data_df, config_df):
         except:
             repo.create_file(DATA_FILE, "Init data", data_content)
             
-        # 설정 저장
         config_content = config_df.to_csv(index=False)
         try:
             contents = repo.get_contents(CONFIG_FILE)
@@ -113,7 +108,7 @@ def load_all_from_github():
         
     return loaded_data, loaded_config
 
-# --- [2. 사용자 설정 (관리자 메뉴) - UI 개선 적용] ---
+# --- [2. 사용자 설정 (관리자 메뉴)] ---
 if 'dept_config' not in st.session_state:
     st.session_state.dept_config = pd.DataFrame({
         '정렬순서': [1, 2, 3, 4],
@@ -131,8 +126,19 @@ for col in ['정렬순서', '부서명', '특별교육과목1', '특별교육과
         else:
             st.session_state.dept_config[col] = '해당없음'
 
+# [수정됨] 드롭다운에 들어갈 특별교육 옵션 리스트 정의
+SPECIAL_EDU_OPTIONS = [
+    "해당없음",
+    "아크용접 등 화기작업", 
+    "고압 전기 취급 작업", 
+    "밀폐공간 내부 작업", 
+    "그라인더 작업",
+    "4. 폭발성·물반응성·자기반응성·자기발열성 물질, 자연발화성 액체·고체 및 인화성 액체의 제조 또는 취급작업",
+    "35. 허가 및 관리 대상 유해물질의 제조 또는 취급작업"
+]
+
 with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", expanded=False):
-    st.caption("부서 카드의 화살표를 눌러 순서를 변경하세요. 설정된 순서대로 대시보드에 표시됩니다.")
+    st.caption("부서 순서를 변경하고, 각 부서에 해당하는 특별교육 및 유해인자를 설정하세요.")
     
     df_config = st.session_state.dept_config.sort_values('정렬순서').reset_index(drop=True)
     
@@ -171,6 +177,7 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
     st.markdown("#### 📝 매핑 상세 설정")
     sorted_df = st.session_state.dept_config.sort_values('정렬순서')
     
+    # [수정됨] TextColumn -> SelectboxColumn으로 변경 및 옵션 적용
     edited_dept_config = st.data_editor(
         sorted_df,
         num_rows="dynamic", 
@@ -180,8 +187,18 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
         column_config={
             "정렬순서": None,
             "부서명": st.column_config.TextColumn("부서명", required=True),
-            "특별교육과목1": st.column_config.TextColumn("특별교육 1", width="medium"),
-            "특별교육과목2": st.column_config.TextColumn("특별교육 2", width="medium"),
+            "특별교육과목1": st.column_config.SelectboxColumn(
+                "특별교육 1", 
+                width="large", 
+                options=SPECIAL_EDU_OPTIONS,
+                required=True
+            ),
+            "특별교육과목2": st.column_config.SelectboxColumn(
+                "특별교육 2", 
+                width="large", 
+                options=SPECIAL_EDU_OPTIONS,
+                required=True
+            ),
             "유해인자": st.column_config.TextColumn("유해인자", width="medium"),
         }
     )
@@ -219,7 +236,7 @@ for col in required_columns:
     if col not in st.session_state.df.columns:
         st.session_state.df[col] = False
 
-# --- [4. 메인 대시보드 (통계 카드)] ---
+# --- [4. 메인 대시보드] ---
 df = st.session_state.df.copy()
 today = date.today()
 
@@ -260,7 +277,7 @@ def calc_next_health(row):
 df['다음_특수검진일'] = df.apply(calc_next_health, axis=1)
 dashboard_df = df[df['퇴사여부'] == False].copy()
 
-# === [상단 요약 대시보드] ===
+# === [상단 요약] ===
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric("👥 총 관리 인원", f"{len(dashboard_df)}명")
@@ -276,7 +293,7 @@ with col4:
 
 st.markdown("---")
 
-# --- [5. 데이터 입력 및 저장 (사이드바)] ---
+# --- [5. 데이터 입력 및 저장] ---
 with st.sidebar:
     c1, c2 = st.columns(2)
     with c1:
@@ -323,7 +340,6 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 입사자", "⚠️ 특별교육", "🏥 특수건강검진"
 ])
 
-# [수정 포인트] StatusColumn 대신 TextColumn 사용 (에러 방지용)
 with tab1:
     st.subheader("안전보건관리책임자 / 관리감독자")
     target = dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])].copy()
@@ -338,14 +354,10 @@ with tab1:
     if not target.empty:
         target['상태'] = target.apply(check_mgr_status, axis=1)
         target_display = add_numbering(target[['성명', '직책', '최근_직무교육일', '다음_직무교육일', '상태']])
-        
         st.dataframe(
-            target_display, 
-            use_container_width=True, 
-            hide_index=True,
+            target_display, use_container_width=True, hide_index=True,
             column_config={
                 "No": st.column_config.NumberColumn("No", width="small"),
-                # [수정] StatusColumn -> TextColumn
                 "상태": st.column_config.TextColumn("상태", width="small")
             }
         )
@@ -366,12 +378,9 @@ with tab2:
         target['상태'] = target.apply(check_waste_status, axis=1)
         final_view = add_numbering(target[['성명', '부서', '최근_직무교육일', '다음_직무교육일', '상태']])
         st.dataframe(
-            final_view, 
-            use_container_width=True, 
-            hide_index=True,
+            final_view, use_container_width=True, hide_index=True,
             column_config={
                 "No": st.column_config.NumberColumn("No", width="small"),
-                # [수정] StatusColumn -> TextColumn
                 "상태": st.column_config.TextColumn("상태", width="small")
             }
         )
@@ -382,7 +391,6 @@ with tab3:
     st.subheader("신규 입사자 교육 현황")
     current_year = today.year
     recent_years = [current_year, current_year-1, current_year-2]
-    # [수정] st.pills가 없으면 radio로 대체 (pills도 1.39+ 기능일 수 있음)
     try:
         selected_year = st.pills("조회 연도", recent_years, default=current_year)
     except AttributeError:
@@ -396,10 +404,7 @@ with tab3:
     else:
         new_hire_view = add_numbering(new_hire_view)
         edited_new_hires = st.data_editor(
-            new_hire_view,
-            key="editor_new_hire",
-            use_container_width=True,
-            hide_index=True,
+            new_hire_view, key="editor_new_hire", use_container_width=True, hide_index=True,
             column_config={
                 "No": st.column_config.NumberColumn("No", width="small"),
                 "신규교육_이수": st.column_config.CheckboxColumn("교육 이수", width="small"),
@@ -440,11 +445,7 @@ with tab4:
             "특별교육_과목2", "특별_2_이론_4H", "특별_2_실습_4H"
         ]
         edited_special = st.data_editor(
-            special_view,
-            key="editor_special",
-            use_container_width=True,
-            hide_index=True,
-            column_order=col_order,
+            special_view, key="editor_special", use_container_width=True, hide_index=True, column_order=col_order,
             column_config={
                 "No": st.column_config.NumberColumn("No", width="small"),
                 "성명": st.column_config.TextColumn("성명", disabled=True),
@@ -491,10 +492,7 @@ with tab5:
         health_view = add_numbering(health_view)
 
         edited_health = st.data_editor(
-            health_view,
-            key="editor_health",
-            use_container_width=True,
-            hide_index=True,
+            health_view, key="editor_health", use_container_width=True, hide_index=True,
             column_config={
                 "No": st.column_config.NumberColumn("No", width="small"),
                 "성명": st.column_config.TextColumn("성명", disabled=True),
@@ -503,7 +501,6 @@ with tab5:
                 "검진단계": st.column_config.SelectboxColumn("검진단계", options=HEALTH_PHASES, required=True),
                 "최근_특수검진일": st.column_config.DateColumn("최근 검진일"),
                 "다음_특수검진일": st.column_config.DateColumn("다음 예정일", disabled=True),
-                # [수정] StatusColumn -> TextColumn
                 "현재상태": st.column_config.TextColumn("상태", width="small"),
                 "직책": None, "입사일": None, "퇴사여부": None, "최근_직무교육일": None,
                 "신규교육_이수": None, "특별_공통_8H": None, "특별_1_이론_4H": None, 
