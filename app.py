@@ -35,12 +35,15 @@ st.markdown("---")
 # ==========================================
 SPECIAL_EDU_OPTIONS = [
     "해당없음",
+    "아크용접 등 화기작업", 
+    "고압 전기 취급 작업", 
+    "밀폐공간 내부 작업", 
+    "그라인더 작업",
     "4. 폭발성·물반응성·자기반응성·자기발열성 물질, 자연발화성 액체·고체 및 인화성 액체의 제조 또는 취급작업",
     "35. 허가 및 관리 대상 유해물질의 제조 또는 취급작업"
 ]
 
 def sanitize_config_df(df):
-    """부서 설정 데이터의 유효성을 검사하고 정리하는 함수"""
     target_cols = ['특별교육과목1', '특별교육과목2']
     # 없는 컬럼 생성
     for col in target_cols:
@@ -163,7 +166,6 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
                         current_df = st.session_state.dept_config
                         cols = ['부서명', '특별교육과목1', '특별교육과목2', '유해인자']
                         
-                        # 기존에 없는 컬럼은 기본값 채우기
                         for c in cols:
                             if c not in df_dept_new.columns:
                                 df_dept_new[c] = "해당없음" if "특별" in c else "없음"
@@ -183,8 +185,7 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
     st.divider()
     st.caption("부서 순서를 변경하고, 각 부서에 해당하는 특별교육 및 유해인자를 설정하세요.")
 
-    # 1. 순서 변경 UI
-    # [핵심 수정] 정렬순서 컬럼을 강제로 숫자로 변환 (TypeError 방지)
+    # [수정] 정렬순서 안전 변환
     st.session_state.dept_config['정렬순서'] = pd.to_numeric(st.session_state.dept_config['정렬순서'], errors='coerce').fillna(0).astype(int)
     
     df_config = st.session_state.dept_config.sort_values('정렬순서')
@@ -194,7 +195,6 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
             c1, c2, c3 = st.columns([8, 1, 1], gap="small", vertical_alignment="center")
             with c1: st.markdown(f"**{row['정렬순서']}. {row['부서명']}**")
             
-            # 여기서 int로 확실하게 변환된 값을 사용
             current_order = int(row['정렬순서'])
             
             with c2:
@@ -265,14 +265,29 @@ for col in required_columns:
 df = st.session_state.df.copy()
 today = date.today()
 
+# [중요 수정] 날짜 컬럼을 강제로 datetime.date 객체로 변환 (계산 오류 방지)
+date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
+for col in date_cols:
+    df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
+
 # 매핑 적용
 df['특별교육_과목1'] = df['부서'].map(DEPT_SUB1_MAP).fillna("설정필요")
 df['특별교육_과목2'] = df['부서'].map(DEPT_SUB2_MAP).fillna("해당없음")
 df['유해인자'] = df['부서'].map(DEPT_FACTOR_MAP).fillna("확인필요")
 
+# [수정] 날짜 계산 함수 안전성 강화 (문자열이 들어와도 처리)
 def add_days(d, days):
-    if pd.isna(d) or d == "": return None
-    return d + timedelta(days=days)
+    try:
+        if pd.isna(d) or str(d).strip() == "": return None
+        # 문자열이면 날짜로 변환 시도
+        if isinstance(d, str):
+            d = pd.to_datetime(d).date()
+        # 타임스탬프면 날짜로 변환
+        if isinstance(d, pd.Timestamp):
+            d = d.date()
+        return d + timedelta(days=days)
+    except:
+        return None
 
 df['입사일_dt'] = pd.to_datetime(df['입사일'], errors='coerce')
 df['입사연도'] = df['입사일_dt'].dt.year
@@ -291,8 +306,18 @@ def calc_next_health(row):
     status = row['검진단계']
     if status == "배치전(미실시)": return None 
     if pd.isna(row['최근_특수검진일']): return None
+    # 여기도 안전하게 변환
+    last_check = row['최근_특수검진일']
+    if isinstance(last_check, str):
+        last_check = pd.to_datetime(last_check).date()
+    elif isinstance(last_check, pd.Timestamp):
+        last_check = last_check.date()
+        
     cycle = 180 if status == "1차검진 완료(다음:6개월)" else 365
-    return row['최근_특수검진일'] + timedelta(days=cycle)
+    try:
+        return last_check + timedelta(days=cycle)
+    except:
+        return None
 
 df['다음_특수검진일'] = df.apply(calc_next_health, axis=1)
 dashboard_df = df[df['퇴사여부'] == False]
@@ -343,6 +368,7 @@ with st.sidebar:
                         
                         df_new = df_new[current_cols]
                         
+                        # [중요] 병합 시 날짜 변환
                         date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
                         for col in date_cols:
                             df_new[col] = pd.to_datetime(df_new[col], errors='coerce').dt.date
