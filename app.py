@@ -38,27 +38,17 @@ st.title("🛡️ 산업안전보건 통합 관리 시스템")
 st.markdown("---")
 
 # ==========================================
-# [전역 설정: 특별교육 옵션 리스트]
+# [중요] 특별교육 옵션 리스트 (전역 변수)
 # ==========================================
-# 이 리스트를 가장 먼저 정의해야 데이터 로드 시 검증이 가능합니다.
 SPECIAL_EDU_OPTIONS = [
     "해당없음",
+    "아크용접 등 화기작업", 
+    "고압 전기 취급 작업", 
+    "밀폐공간 내부 작업", 
+    "그라인더 작업",
     "4. 폭발성·물반응성·자기반응성·자기발열성 물질, 자연발화성 액체·고체 및 인화성 액체의 제조 또는 취급작업",
     "35. 허가 및 관리 대상 유해물질의 제조 또는 취급작업"
 ]
-
-# 데이터 정제 함수 (옵션에 없는 값은 '해당없음'으로 강제 변환)
-def sanitize_config_df(df):
-    target_cols = ['특별교육과목1', '특별교육과목2']
-    for col in target_cols:
-        if col in df.columns:
-            # 1. 문자열 변환 및 공백 제거
-            df[col] = df[col].astype(str).str.strip()
-            # 2. nan, None, string 'nan' 처리
-            df.loc[df[col].isin(['nan', 'None', '', 'nan']), col] = "해당없음"
-            # 3. 옵션 리스트에 없는 값은 '해당없음'으로 치환
-            df[col] = df[col].apply(lambda x: x if x in SPECIAL_EDU_OPTIONS else "해당없음")
-    return df
 
 # ==========================================
 # [GitHub 연동 설정]
@@ -126,10 +116,6 @@ def load_all_from_github():
         contents = repo.get_contents(CONFIG_FILE)
         csv_string = contents.decoded_content.decode("utf-8")
         loaded_config = pd.read_csv(io.StringIO(csv_string))
-        
-        # [핵심 수정] 불러오자마자 데이터 정제 실행!
-        loaded_config = sanitize_config_df(loaded_config)
-        
     except:
         pass
         
@@ -137,7 +123,6 @@ def load_all_from_github():
 
 # --- [2. 사용자 설정 (관리자 메뉴)] ---
 if 'dept_config' not in st.session_state:
-    # 초기값 설정
     st.session_state.dept_config = pd.DataFrame({
         '정렬순서': [1, 2, 3, 4],
         '부서명': ['용접팀', '전기팀', '밀폐작업팀', '일반관리팀'],
@@ -145,8 +130,6 @@ if 'dept_config' not in st.session_state:
         '특별교육과목2': ['그라인더 작업', '해당없음', '해당없음', '해당없음'],
         '유해인자': ['용접흄, 분진', '전류(감전)', '산소결핍', '없음']
     })
-    # 초기값도 정제 (혹시 모를 오타 방지)
-    st.session_state.dept_config = sanitize_config_df(st.session_state.dept_config)
 
 # 안전장치: 컬럼 보장
 for col in ['정렬순서', '부서명', '특별교육과목1', '특별교육과목2', '유해인자']:
@@ -194,10 +177,21 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
                 st.markdown('<hr style="margin: 5px 0; border-top: 1px solid #e0e0e0;">', unsafe_allow_html=True)
 
     st.markdown("#### 📝 매핑 상세 설정")
+    
+    # [데이터 강력 세탁 로직 - 데이터 표시 직전에 수행]
     sorted_df = st.session_state.dept_config.sort_values('정렬순서')
     
-    # [화면 표시 전 마지막 안전장치] 데이터 재검증
-    sorted_df = sanitize_config_df(sorted_df)
+    # 1. 모든 값을 문자열로 변환 (None, NaN 방지)
+    sorted_df['특별교육과목1'] = sorted_df['특별교육과목1'].astype(str).fillna("해당없음")
+    sorted_df['특별교육과목2'] = sorted_df['특별교육과목2'].astype(str).fillna("해당없음")
+    
+    # 2. 앞뒤 공백 제거 (CSV 로드 시 발생하는 공백 제거)
+    sorted_df['특별교육과목1'] = sorted_df['특별교육과목1'].str.strip()
+    sorted_df['특별교육과목2'] = sorted_df['특별교육과목2'].str.strip()
+    
+    # 3. 옵션 리스트에 없는 값은 무조건 "해당없음"으로 변경 (핵심!)
+    sorted_df['특별교육과목1'] = sorted_df['특별교육과목1'].apply(lambda x: x if x in SPECIAL_EDU_OPTIONS else "해당없음")
+    sorted_df['특별교육과목2'] = sorted_df['특별교육과목2'].apply(lambda x: x if x in SPECIAL_EDU_OPTIONS else "해당없음")
 
     edited_dept_config = st.data_editor(
         sorted_df,
@@ -223,6 +217,7 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
             "유해인자": st.column_config.TextColumn("유해인자", width="medium"),
         }
     )
+    # 수정된 내용을 세션 상태에 저장 (이때 세탁된 값으로 저장됨)
     st.session_state.dept_config = edited_dept_config
     
     DEPT_SUB1_MAP = dict(zip(edited_dept_config['부서명'], edited_dept_config['특별교육과목1']))
@@ -261,7 +256,6 @@ for col in required_columns:
 df = st.session_state.df.copy()
 today = date.today()
 
-# 매핑 데이터가 없을 경우 안전장치
 if 'DEPT_SUB1_MAP' not in locals():
     DEPT_SUB1_MAP = dict(zip(st.session_state.dept_config['부서명'], st.session_state.dept_config['특별교육과목1']))
     DEPT_SUB2_MAP = dict(zip(st.session_state.dept_config['부서명'], st.session_state.dept_config['특별교육과목2']))
