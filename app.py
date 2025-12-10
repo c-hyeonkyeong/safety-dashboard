@@ -7,12 +7,12 @@ import io
 # --- [1. 시스템 설정] ---
 st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️")
 
-# CSS: 사이드바 폭을 좀 더 넓혀서 명부 수정이 편하게 함
+# CSS: 사이드바 폭 조정 및 스타일
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
     div.stButton > button {width: 100%; border-radius: 6px;}
-    [data-testid="stSidebar"] {min-width: 500px;} /* 사이드바 넓게 조정 */
+    [data-testid="stSidebar"] {min-width: 500px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -48,11 +48,9 @@ def sanitize_config_df(df):
 with st.sidebar:
     st.header("⚙️ 통합 관리자 메뉴")
     
-    # ----------------------------------------------------
     # 1. GitHub 및 서버 설정
-    # ----------------------------------------------------
     with st.expander("☁️ 서버/저장소 연결", expanded=False):
-        if st.button("🔄 강제 새로고침", type="primary"):
+        if st.button("🔄 강제 새로고침 (오류 해결용)", type="primary"):
             st.cache_data.clear()
             st.session_state.clear()
             st.rerun()
@@ -111,9 +109,7 @@ with st.sidebar:
 
     st.divider()
 
-    # ----------------------------------------------------
     # 2. 관리자 설정 (부서 매핑)
-    # ----------------------------------------------------
     if 'dept_config_final' not in st.session_state:
         st.session_state.dept_config_final = pd.DataFrame({
             '정렬순서': [1, 2, 3, 4],
@@ -163,9 +159,7 @@ with st.sidebar:
 
     st.divider()
 
-    # ----------------------------------------------------
-    # 3. 데이터 저장/로드 및 명부 수정 (여기로 이동됨!)
-    # ----------------------------------------------------
+    # 3. 데이터 저장/로드 및 명부 수정
     st.subheader("📝 근로자 명부 관리")
     
     c1, c2 = st.columns(2)
@@ -219,7 +213,6 @@ with st.sidebar:
                         st.rerun()
             except Exception as e: st.error(str(e))
 
-    # [여기로 이동됨] 근로자 정보 수정 에디터
     st.markdown("##### 👥 명부 직접 수정")
     st.caption("특수검진 제외는 여기서 체크 해제")
     edited_df = st.data_editor(
@@ -323,14 +316,18 @@ with tab4:
     target = dashboard_df[dashboard_df['특별교육_과목1'] != '해당없음'].copy()
     safe_update_simple(target[['성명','부서','특별_공통_8H','특별교육_과목1','특별_1_이론_4H','특별_1_실습_4H']], "t4", {})
 
+# [중요] 특수건강검진 탭: 튕김 현상 방지 로직 적용
 with tab5:
     st.subheader("특수건강검진 현황")
+    
+    # 체크된 사람 필터링 (인덱스 유지)
     target_indices = dashboard_df[dashboard_df['특수검진_대상'] == True].index
     target = dashboard_df.loc[target_indices].copy()
     
     if not target.empty:
         target['상태'] = target.apply(lambda r: "🔴 검진필요" if r['검진단계']=="배치전(미실시)" else ("🔴 초과" if pd.notnull(r['다음_특수검진일']) and (r['다음_특수검진일']-today).days<0 else "🟢 양호"), axis=1)
         
+        # 데이터 에디터 출력
         edited_target = st.data_editor(
             target[['성명','부서','유해인자','검진단계','최근_특수검진일','다음_특수검진일','상태']],
             key="health_editor_fix",
@@ -343,10 +340,15 @@ with tab5:
                 "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES, required=True)
             }
         )
+        
+        # [핵심] 변경 감지 시에만 저장 (강제 리런 제거로 입력 부드럽게)
+        # 인덱스 재정렬
         edited_target.index = target.index
         compare_cols = ['검진단계', '최근_특수검진일']
+        
         if not target[compare_cols].equals(edited_target[compare_cols]):
             st.session_state.df_final.loc[target_indices, compare_cols] = edited_target[compare_cols]
-            st.rerun()
+            # 여기서는 st.rerun()을 쓰지 않아도 Streamlit이 자연스럽게 다음 루프에서 반영합니다.
+            # 만약 즉각적인 '다음예정일' 계산 갱신이 필요하면 사용자가 엔터를 치거나 다른 곳을 클릭할 때 반영됩니다.
     else: 
-        st.info("대상자가 없습니다. 명부에서 검진대상을 체크해주세요.")
+        st.info("대상자가 없습니다. 왼쪽 사이드바 명부에서 검진대상을 체크해주세요.")
