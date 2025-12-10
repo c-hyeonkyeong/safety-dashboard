@@ -35,6 +35,10 @@ st.markdown("---")
 # ==========================================
 SPECIAL_EDU_OPTIONS = [
     "해당없음",
+    "아크용접 등 화기작업", 
+    "고압 전기 취급 작업", 
+    "밀폐공간 내부 작업", 
+    "그라인더 작업",
     "4. 폭발성·물반응성·자기반응성·자기발열성 물질, 자연발화성 액체·고체 및 인화성 액체의 제조 또는 취급작업",
     "35. 허가 및 관리 대상 유해물질의 제조 또는 취급작업"
 ]
@@ -187,6 +191,7 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
             c1, c2, c3 = st.columns([8, 1, 1], gap="small", vertical_alignment="center")
             with c1: st.markdown(f"**{row['정렬순서']}. {row['부서명']}**")
             
+            # [수정] TypeError 방지 (int 변환)
             current_order = int(row['정렬순서'])
             
             with c2:
@@ -257,10 +262,11 @@ for col in required_columns:
 df = st.session_state.df.copy()
 today = date.today()
 
-# 날짜 컬럼 강제 변환
+# 날짜 컬럼 강제 변환 (안전하게)
 date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
 for col in date_cols:
-    df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
+    if col in df.columns:
+        df[col] = pd.to_datetime(df[col].astype(str), errors='coerce').dt.date
 
 # 매핑 적용
 df['특별교육_과목1'] = df['부서'].map(DEPT_SUB1_MAP).fillna("설정필요")
@@ -275,7 +281,7 @@ def add_days(d, days):
         return d + timedelta(days=days)
     except: return None
 
-df['입사일_dt'] = pd.to_datetime(df['입사일'], errors='coerce')
+df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce')
 df['입사연도'] = df['입사일_dt'].dt.year
 df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
 
@@ -347,7 +353,7 @@ with st.sidebar:
                         
                         date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
                         for col in date_cols:
-                            df_new[col] = pd.to_datetime(df_new[col], errors='coerce').dt.date
+                            df_new[col] = pd.to_datetime(df_new[col].astype(str), errors='coerce').dt.date
                         
                         bool_cols = [c for c in current_cols if '이수' in c or '4H' in c or '8H' in c or '여부' in c]
                         for col in bool_cols:
@@ -383,6 +389,7 @@ with st.sidebar:
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 입사자", "⚠️ 특별교육", "🏥 특수건강검진"])
 
 def safe_update_from_editor(subset_view, editor_key, visible_cols):
+    # [수정] 번호를 무조건 1부터 생성하여 붙임
     view_with_no = subset_view.copy()
     view_with_no.insert(0, "No", range(1, len(view_with_no) + 1))
     
@@ -405,7 +412,6 @@ with tab1:
     st.subheader("안전보건관리책임자 / 관리감독자")
     target = dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])].copy()
     if not target.empty:
-        # [수정] 이모지 추가 로직
         target['상태'] = target.apply(lambda r: "🔴 기한초과" if pd.isna(r['다음_직무교육일']) or (r['다음_직무교육일'] - today).days < 0 else ("🟡 임박" if (r['다음_직무교육일'] - today).days < 30 else "🟢 양호"), axis=1)
         cols_config = {
             "No": st.column_config.NumberColumn("No", width="small"),
@@ -413,7 +419,6 @@ with tab1:
             "직책": st.column_config.TextColumn("직책", disabled=True),
             "최근_직무교육일": st.column_config.DateColumn("최근 직무교육일"),
             "다음_직무교육일": st.column_config.DateColumn("다음 예정일", disabled=True),
-            # [수정] TextColumn으로 변경 (StatusColumn 삭제)
             "상태": st.column_config.TextColumn("상태", width="small", disabled=True)
         }
         safe_update_from_editor(target[['성명', '직책', '최근_직무교육일', '다음_직무교육일', '상태']], "editor_mgr", cols_config)
@@ -423,7 +428,6 @@ with tab2:
     st.subheader("폐기물 담당자")
     target = dashboard_df[dashboard_df['직책'] == '폐기물담당자'].copy()
     if not target.empty:
-        # [수정] 이모지 추가 로직
         target['상태'] = target.apply(lambda r: "🔴 교육필요" if pd.isna(r['다음_직무교육일']) else ("🔴 기한초과" if (r['다음_직무교육일'] - today).days < 0 else "🟢 양호"), axis=1)
         cols_config = {
             "No": st.column_config.NumberColumn("No", width="small"),
@@ -431,7 +435,6 @@ with tab2:
             "부서": st.column_config.TextColumn("부서", disabled=True),
             "최근_직무교육일": st.column_config.DateColumn("최근 직무교육일"),
             "다음_직무교육일": st.column_config.DateColumn("다음 예정일", disabled=True),
-            # [수정] TextColumn으로 변경
             "상태": st.column_config.TextColumn("상태", width="small", disabled=True)
         }
         safe_update_from_editor(target[['성명', '부서', '최근_직무교육일', '다음_직무교육일', '상태']], "editor_waste", cols_config)
@@ -479,7 +482,6 @@ with tab5:
     st.subheader("특수건강검진")
     target = dashboard_df[(dashboard_df['유해인자'].notna()) & (dashboard_df['유해인자'] != '없음')].copy()
     if not target.empty:
-        # [수정] 이모지 추가 로직
         target['상태'] = target.apply(lambda r: "🔴 검진필요" if r['검진단계'] == "배치전(미실시)" else ("-" if pd.isna(r['다음_특수검진일']) else ("🔴 기한초과" if (r['다음_특수검진일'] - today).days < 0 else ("🟡 임박" if (r['다음_특수검진일'] - today).days < 30 else "🟢 양호"))), axis=1)
         cols_config = {
             "No": st.column_config.NumberColumn("No", width="small"),
@@ -489,7 +491,6 @@ with tab5:
             "검진단계": st.column_config.SelectboxColumn("검진단계", options=HEALTH_PHASES, required=True),
             "최근_특수검진일": st.column_config.DateColumn("최근 검진일"),
             "다음_특수검진일": st.column_config.DateColumn("다음 예정일", disabled=True),
-            # [수정] TextColumn으로 변경
             "상태": st.column_config.TextColumn("상태", width="small", disabled=True)
         }
         safe_update_from_editor(target[["성명", "부서", "유해인자", "검진단계", "최근_특수검진일", "다음_특수검진일", "상태"]], "editor_health", cols_config)
