@@ -4,13 +4,6 @@ from datetime import datetime, date, timedelta
 from github import Github
 import io
 
-# ★ [필수] 드래그 앤 드롭 기능을 위한 라이브러리 체크
-try:
-    from streamlit_sortables import sort_items
-except ImportError:
-    st.error("🚨 'streamlit-sortables' 라이브러리가 필요합니다. 터미널에 `pip install streamlit-sortables`를 입력하세요.")
-    st.stop()
-
 # --- [1. 시스템 설정] ---
 st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️")
 
@@ -27,7 +20,7 @@ st.markdown("""
         margin-top: 0px; 
     }
     
-    /* 카드 박스 스타일 */
+    /* 카드 박스 스타일 (간격 좁힘) */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         background-color: #f8f9fa;
         border-radius: 8px;
@@ -118,7 +111,7 @@ def load_all_from_github():
         
     return loaded_data, loaded_config
 
-# --- [2. 사용자 설정 (관리자 메뉴) - 드래그 앤 드롭 적용] ---
+# --- [2. 사용자 설정 (관리자 메뉴) - 버튼식 순서 변경] ---
 if 'dept_config' not in st.session_state:
     st.session_state.dept_config = pd.DataFrame({
         '정렬순서': [1, 2, 3, 4],
@@ -138,22 +131,45 @@ for col in ['정렬순서', '부서명', '특별교육과목1', '특별교육과
 
 with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", expanded=False):
     
-    m_tab1, m_tab2 = st.tabs(["⇅ 부서 순서 조정 (드래그)", "📝 교육 내용 편집"])
+    m_tab1, m_tab2 = st.tabs(["⇅ 부서 순서 조정", "📝 교육 내용 편집"])
     
     with m_tab1:
-        st.info("💡 부서 박스를 마우스로 드래그해서 순서를 바꾸세요.")
+        st.info("💡 화살표 버튼을 눌러 순서를 변경하세요. (설치 없이 바로 작동)")
         
-        current_df = st.session_state.dept_config.sort_values('정렬순서')
-        current_items = current_df['부서명'].tolist()
+        current_df = st.session_state.dept_config.sort_values('정렬순서').reset_index(drop=True)
         
-        # 드래그 앤 드롭
-        sorted_items = sort_items(current_items, direction="vertical")
-        
-        if sorted_items != current_items:
-            new_df = current_df.set_index('부서명').reindex(sorted_items).reset_index()
-            new_df['정렬순서'] = range(1, len(new_df) + 1)
-            st.session_state.dept_config = new_df
-            st.rerun()
+        # 카드 UI로 순서 변경 버튼 구현
+        for i, row in current_df.iterrows():
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([8, 1, 1])
+                with c1:
+                    st.markdown(f"**{i+1}. {row['부서명']}**")
+                with c2:
+                    if i > 0: # 위로 이동
+                        if st.button("⬆️", key=f"up_{i}"):
+                            curr_idx = current_df.at[i, '정렬순서']
+                            prev_idx = current_df.at[i-1, '정렬순서']
+                            
+                            mask_curr = st.session_state.dept_config['정렬순서'] == curr_idx
+                            mask_prev = st.session_state.dept_config['정렬순서'] == prev_idx
+                            
+                            st.session_state.dept_config.loc[mask_curr, '정렬순서'] = 9999
+                            st.session_state.dept_config.loc[mask_prev, '정렬순서'] = curr_idx
+                            st.session_state.dept_config.loc[mask_curr, '정렬순서'] = prev_idx
+                            st.rerun()
+                with c3:
+                    if i < len(current_df) - 1: # 아래로 이동
+                        if st.button("⬇️", key=f"down_{i}"):
+                            curr_idx = current_df.at[i, '정렬순서']
+                            next_idx = current_df.at[i+1, '정렬순서']
+                            
+                            mask_curr = st.session_state.dept_config['정렬순서'] == curr_idx
+                            mask_next = st.session_state.dept_config['정렬순서'] == next_idx
+                            
+                            st.session_state.dept_config.loc[mask_curr, '정렬순서'] = 9999
+                            st.session_state.dept_config.loc[mask_next, '정렬순서'] = curr_idx
+                            st.session_state.dept_config.loc[mask_curr, '정렬순서'] = next_idx
+                            st.rerun()
 
     with m_tab2:
         st.caption("여기서는 각 부서의 교육 과목과 유해인자를 수정합니다.")
@@ -376,7 +392,8 @@ with tab3:
     st.subheader("신규 입사자 교육 현황")
     current_year = today.year
     recent_years = [current_year, current_year-1, current_year-2]
-    selected_year = st.pills("조회 연도", recent_years, default=current_year)
+    # st.pills 대신 selectbox 사용 (버전 호환성)
+    selected_year = st.selectbox("조회 연도", recent_years)
     
     mask_new = dashboard_df['입사연도'] == selected_year
     new_hire_view = dashboard_df[mask_new].copy()
@@ -407,7 +424,6 @@ with tab3:
             }
         )
         if not new_hire_view.equals(edited_new_hires):
-            # 체크박스 변경 시 원본 반영
             for index, row in edited_new_hires.iterrows():
                 name = row['성명']
                 idx = st.session_state.df[st.session_state.df['성명'] == name].index
@@ -423,7 +439,7 @@ with tab4:
     if special_view.empty:
         st.info("특별교육 대상자가 없습니다.")
     else:
-        # 신규 입사자는 공통8H 자동 체크
+        # 신규 입사자는 공통8H 자동 체크 (보여줄 때만)
         special_view.loc[special_view['법적_신규자'] == True, '특별_공통_8H'] = True
         special_view = add_numbering(special_view)
         
