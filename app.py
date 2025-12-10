@@ -95,9 +95,10 @@ with st.sidebar:
             contents = repo.get_contents(DATA_FILE)
             csv_string = contents.decoded_content.decode("utf-8")
             loaded_data = pd.read_csv(io.StringIO(csv_string))
+            # 불러올 때 날짜 변환
             for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
                 if col in loaded_data.columns:
-                    loaded_data[col] = pd.to_datetime(loaded_data[col].astype(str), errors='coerce').dt.date
+                    loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce')
         except: pass
         try:
             contents = repo.get_contents(CONFIG_FILE)
@@ -189,9 +190,23 @@ with st.sidebar:
         }
         st.session_state.df_final = pd.DataFrame(data)
 
-    if '특수검진_대상' not in st.session_state.df_final.columns:
-        st.session_state.df_final['특수검진_대상'] = True
-    required_columns = ['퇴사여부', '신규교육_이수', '특별_공통_8H', '특별_1_이론_4H', '특별_1_실습_4H', '특별_2_이론_4H', '특별_2_실습_4H']
+    # [오류 해결] 데이터 타입 강제 변환 (에러 발생 방지)
+    # 1. 날짜 컬럼을 datetime 형식으로 변환 (문자열 등이 섞여있으면 에러남)
+    date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
+    for col in date_cols:
+        if col in st.session_state.df_final.columns:
+            st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce')
+
+    # 2. 체크박스용 컬럼을 boolean 형식으로 변환
+    bool_cols = ['퇴사여부', '특수검진_대상']
+    for col in bool_cols:
+        if col not in st.session_state.df_final.columns:
+            st.session_state.df_final[col] = True if col == '특수검진_대상' else False
+        else:
+            st.session_state.df_final[col] = st.session_state.df_final[col].fillna(False).astype(bool)
+
+    # 기타 컬럼 보장
+    required_columns = ['신규교육_이수', '특별_공통_8H', '특별_1_이론_4H', '특별_1_실습_4H', '특별_2_이론_4H', '특별_2_실습_4H']
     for col in required_columns:
         if col not in st.session_state.df_final.columns:
             st.session_state.df_final[col] = False
@@ -215,6 +230,8 @@ with st.sidebar:
 
     st.markdown("##### 👥 명부 직접 수정")
     st.caption("특수검진 제외는 여기서 체크 해제")
+    
+    # [수정된 부분] 날짜 컬럼 형식을 확실히 지정하여 에러 방지
     edited_df = st.data_editor(
         st.session_state.df_final,
         num_rows="dynamic",
@@ -234,7 +251,6 @@ with st.sidebar:
     if not st.session_state.df_final.equals(edited_df):
         st.session_state.df_final = edited_df
 
-
 # ==========================================
 # [메인 화면] 계산 및 대시보드 출력
 # ==========================================
@@ -243,15 +259,20 @@ with st.sidebar:
 df = st.session_state.df_final.copy()
 today = date.today()
 
+# 날짜 계산을 위해 dt.date로 변환
 for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
-    if col in df.columns: df[col] = pd.to_datetime(df[col].astype(str), errors='coerce').dt.date
+    if col in df.columns: 
+        # datetime으로 확실히 변환 후 .dt.date로 날짜 객체화
+        df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
 
 df['특별교육_과목1'] = df['부서'].map(DEPT_S1).fillna("설정필요")
 df['특별교육_과목2'] = df['부서'].map(DEPT_S2).fillna("해당없음")
 df['유해인자'] = df['부서'].map(DEPT_FAC).fillna("확인필요")
 
 def add_days(d, days):
-    try: return d + timedelta(days=days)
+    try: 
+        if pd.isna(d): return None
+        return d + timedelta(days=days)
     except: return None
 
 df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce')
@@ -316,18 +337,16 @@ with tab4:
     target = dashboard_df[dashboard_df['특별교육_과목1'] != '해당없음'].copy()
     safe_update_simple(target[['성명','부서','특별_공통_8H','특별교육_과목1','특별_1_이론_4H','특별_1_실습_4H']], "t4", {})
 
-# [중요] 특수건강검진 탭: 튕김 현상 방지 로직 적용
+# [탭 5] 특수건강검진 - 튕김 해결 및 계산 로직 적용
 with tab5:
     st.subheader("특수건강검진 현황")
     
-    # 체크된 사람 필터링 (인덱스 유지)
     target_indices = dashboard_df[dashboard_df['특수검진_대상'] == True].index
     target = dashboard_df.loc[target_indices].copy()
     
     if not target.empty:
         target['상태'] = target.apply(lambda r: "🔴 검진필요" if r['검진단계']=="배치전(미실시)" else ("🔴 초과" if pd.notnull(r['다음_특수검진일']) and (r['다음_특수검진일']-today).days<0 else "🟢 양호"), axis=1)
         
-        # 데이터 에디터 출력
         edited_target = st.data_editor(
             target[['성명','부서','유해인자','검진단계','최근_특수검진일','다음_특수검진일','상태']],
             key="health_editor_fix",
@@ -340,15 +359,12 @@ with tab5:
                 "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES, required=True)
             }
         )
-        
-        # [핵심] 변경 감지 시에만 저장 (강제 리런 제거로 입력 부드럽게)
-        # 인덱스 재정렬
+        # 변경 감지 및 저장
         edited_target.index = target.index
         compare_cols = ['검진단계', '최근_특수검진일']
         
         if not target[compare_cols].equals(edited_target[compare_cols]):
             st.session_state.df_final.loc[target_indices, compare_cols] = edited_target[compare_cols]
-            # 여기서는 st.rerun()을 쓰지 않아도 Streamlit이 자연스럽게 다음 루프에서 반영합니다.
-            # 만약 즉각적인 '다음예정일' 계산 갱신이 필요하면 사용자가 엔터를 치거나 다른 곳을 클릭할 때 반영됩니다.
+            # 강제 rerun 제거하여 튕김 현상 방지 (Streamlit이 알아서 반영함)
     else: 
         st.info("대상자가 없습니다. 왼쪽 사이드바 명부에서 검진대상을 체크해주세요.")
