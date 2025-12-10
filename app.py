@@ -31,7 +31,7 @@ st.title("🛡️ 산업안전보건 통합 관리 시스템")
 st.markdown("---")
 
 # ==========================================
-# [강제 적용] 특별교육 옵션 (4번, 35번, 해당없음)
+# [수정 4] 특별교육 목록 4번, 35번만 나오도록 설정
 # ==========================================
 SPECIAL_EDU_OPTIONS = [
     "해당없음",
@@ -40,18 +40,15 @@ SPECIAL_EDU_OPTIONS = [
 ]
 
 def sanitize_config_df(df):
-    """설정 데이터프레임을 강제로 정리하는 함수"""
     target_cols = ['특별교육과목1', '특별교육과목2']
-    # 컬럼이 없으면 생성
     for col in target_cols:
         if col not in df.columns:
             df[col] = "해당없음"
-            
-    # 값 강제 필터링 (기존에 다른 값이 있어도 강제로 '해당없음'이나 지정된 값으로 변환)
     for col in target_cols:
-        df[col] = df[col].astype(str).str.strip()
-        df[col] = df[col].apply(lambda x: x if x in SPECIAL_EDU_OPTIONS else "해당없음")
-        
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+            # 옵션에 없는 값은 '해당없음'으로 처리
+            df[col] = df[col].apply(lambda x: x if x in SPECIAL_EDU_OPTIONS else "해당없음")
     if '유해인자' not in df.columns:
         df['유해인자'] = "없음"
     else:
@@ -63,12 +60,6 @@ def sanitize_config_df(df):
 # ==========================================
 with st.sidebar:
     st.header("⚙️ 시스템 설정")
-    
-    # [긴급 수정] 초기화 버튼 추가
-    if st.button("🚨 시스템 완전 초기화 (오류 해결용)", type="primary"):
-        st.session_state.clear()
-        st.rerun()
-        
     GITHUB_TOKEN = st.text_input("🔑 GitHub 토큰", type="password")
     REPO_NAME = st.text_input("📂 레포지토리 (user/repo)")
     DATA_FILE = "data.csv"
@@ -119,7 +110,6 @@ def load_all_from_github():
         contents = repo.get_contents(CONFIG_FILE)
         csv_string = contents.decoded_content.decode("utf-8")
         loaded_config = pd.read_csv(io.StringIO(csv_string))
-        # 불러올 때도 강제 정화
         loaded_config = sanitize_config_df(loaded_config)
     except: pass
     return loaded_data, loaded_config
@@ -133,9 +123,7 @@ if 'dept_config' not in st.session_state:
         '특별교육과목2': ["해당없음"] * 4,
         '유해인자': ['용접흄, 분진', '전류(감전)', '산소결핍', '없음']
     })
-
-# [중요] 매 실행마다 설정 데이터프레임을 강제로 정리 (기존 잘못된 옵션 삭제)
-st.session_state.dept_config = sanitize_config_df(st.session_state.dept_config)
+    st.session_state.dept_config = sanitize_config_df(st.session_state.dept_config)
 
 # 컬럼 보장
 for col in ['정렬순서', '부서명', '특별교육과목1', '특별교육과목2', '유해인자']:
@@ -191,7 +179,8 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
                 st.error(f"오류: {e}")
 
     st.divider()
-    
+    st.caption("부서 순서를 변경하고, 각 부서에 해당하는 특별교육 및 유해인자를 설정하세요.")
+
     st.session_state.dept_config['정렬순서'] = pd.to_numeric(st.session_state.dept_config['정렬순서'], errors='coerce').fillna(0).astype(int)
     
     df_config = st.session_state.dept_config.sort_values('정렬순서')
@@ -221,8 +210,6 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
 
     st.markdown("#### 📝 매핑 상세 설정")
     sorted_df = sanitize_config_df(st.session_state.dept_config.sort_values('정렬순서'))
-    
-    # 여기서 강제로 옵션을 제한함
     edited_dept_config = st.data_editor(
         sorted_df, num_rows="dynamic", key="dept_editor", use_container_width=True, hide_index=True,
         column_config={
@@ -256,11 +243,12 @@ if 'df' not in st.session_state:
         '특별_공통_8H': [False, False, False, False, True, False],
         '검진단계': ['배치전(미실시)', '배치전(미실시)', '배치전(미실시)', '배치전(미실시)', '1차검진 완료(다음:6개월)', '배치전(미실시)'], 
         '최근_특수검진일': [None, None, None, None, date(2024, 12, 1), None],
+        # [수정 3] 초기 데이터에 '특수검진_대상' 추가
         '특수검진_대상': [True, True, True, True, True, False]
     }
     st.session_state.df = pd.DataFrame(data)
 
-# [중요] 컬럼 자동 보정 (기존 데이터가 있더라도 이 코드가 실행되어 '특수검진_대상'을 만듦)
+# 필수 컬럼 보장: '특수검진_대상'이 없으면 True로 생성
 if '특수검진_대상' not in st.session_state.df.columns:
     st.session_state.df['특수검진_대상'] = True
 
@@ -284,6 +272,10 @@ df['특별교육_과목1'] = df['부서'].map(DEPT_SUB1_MAP).fillna("설정필�
 df['특별교육_과목2'] = df['부서'].map(DEPT_SUB2_MAP).fillna("해당없음")
 df['유해인자'] = df['부서'].map(DEPT_FACTOR_MAP).fillna("확인필요")
 
+# 유해인자가 '없음'인 경우 자동으로 특수검진 대상 아님(False) 처리 가능하나, 
+# 사용자가 수동으로 체크/해제하는 것을 우선시하려면 아래 줄은 주석 처리 또는 유지
+df.loc[df['유해인자'] == '없음', '특수검진_대상'] = False
+
 # 날짜 계산 함수
 def add_days(d, days):
     try:
@@ -297,21 +289,18 @@ df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce'
 df['입사연도'] = df['입사일_dt'].dt.year
 df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
 
-# [강제 재계산] 기존 데이터에 값이 있든 없든 무조건 다시 계산
 df['다음_직무교육일'] = None
-
 mask_manager = df['직책'] == '안전보건관리책임자'
 df.loc[mask_manager, '다음_직무교육일'] = df[mask_manager]['최근_직무교육일'].apply(lambda x: add_days(x, 730))
-
 mask_supervisor = df['직책'] == '관리감독자'
 df.loc[mask_supervisor, '다음_직무교육일'] = df[mask_supervisor]['최근_직무교육일'].apply(lambda x: add_days(x, 365))
 
-# [수정 1: 폐기물 담당자] 직책 이름의 공백 등을 제거하고 정확히 매칭
-mask_waste = df['직책'].astype(str).str.strip() == '폐기물담당자'
+# [수정 1] 폐기물 담당자 다음 예정일 계산 (3년 = 1095일)
+mask_waste = df['직책'] == '폐기물담당자'
 df.loc[mask_waste, '다음_직무교육일'] = df[mask_waste]['최근_직무교육일'].apply(lambda x: add_days(x, 1095))
 
 def calc_next_health(row):
-    # [수정 3: 특수검진 대상 체크]
+    # [수정 3] 특수검진 대상이 아니면 계산하지 않음
     if not row.get('특수검진_대상', True): return None
     
     status = row['검진단계']
@@ -333,6 +322,7 @@ col1, col2, col3, col4 = st.columns(4)
 with col1: st.metric("👥 총 관리 인원", f"{len(dashboard_df)}명")
 with col2: st.metric("🌱 신규 입사자", f"{len(dashboard_df[dashboard_df['법적_신규자']])}명")
 with col3: st.metric("👔 책임자/감독자", f"{len(dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])])}명")
+# [수정 3] 특수검진 대상 체크된 인원만 카운트
 with col4: st.metric("🏥 검진 대상", f"{len(dashboard_df[dashboard_df['특수검진_대상'] == True])}명")
 
 st.markdown("---")
@@ -374,6 +364,7 @@ with st.sidebar:
                         for col in date_cols:
                             df_new[col] = pd.to_datetime(df_new[col].astype(str), errors='coerce').dt.date
                         
+                        # 특수검진 대상 기본값 True
                         if '특수검진_대상' in df_new.columns:
                             df_new['특수검진_대상'] = df_new['특수검진_대상'].fillna(True).astype(bool)
                         else:
@@ -387,7 +378,7 @@ with st.sidebar:
     st.markdown("### 📝 근로자 명부 수정")
     st.caption("특수검진 대상이 아닌 경우 체크를 해제하세요. (리스트에서 제외됨)")
     
-    # [수정 3: 특수검진 대상 체크박스 확인]
+    # [수정 3] 데이터 에디터에 '특수검진_대상' 컬럼 추가
     edited_df = st.data_editor(
         st.session_state.df,
         num_rows="dynamic",
@@ -407,7 +398,7 @@ with st.sidebar:
     if not st.session_state.df.equals(edited_df):
         st.session_state.df = edited_df
 
-# --- [6. 탭 화면 구성] ---
+# --- [6. 탭 화면 구성 - 안정적인 업데이트 로직] ---
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 입사자", "⚠️ 특별교육", "🏥 특수건강검진"])
 
 def safe_update_from_editor(subset_view, editor_key, visible_cols):
@@ -446,10 +437,10 @@ with tab1:
     else: st.info("대상자가 없습니다.")
 
 with tab2:
-    st.subheader("폐기물 담당자 (3년 주기)")
-    # [수정 1: 폐기물 담당자 매칭] 공백 제거 후 비교
-    target = dashboard_df[dashboard_df['직책'].astype(str).str.strip() == '폐기물담당자'].copy()
+    st.subheader("폐기물 담당자")
+    target = dashboard_df[dashboard_df['직책'] == '폐기물담당자'].copy()
     if not target.empty:
+        # [수정 1] 상태 표시 로직 개선
         target['상태'] = target.apply(lambda r: "🔴 교육필요" if pd.isna(r['최근_직무교육일']) else ("🔴 기한초과" if (r['다음_직무교육일'] - today).days < 0 else "🟢 양호"), axis=1)
         cols_config = {
             "No": st.column_config.NumberColumn("No", width="small"),
@@ -464,7 +455,7 @@ with tab2:
 
 with tab3:
     st.subheader("신규 입사자")
-    # [수정 2: 3개년 조회]
+    # [수정 2] 3개년 조회 기능 (올해, 작년, 재작년)
     years_options = [today.year, today.year-1, today.year-2]
     try: selected_year = st.pills("조회 연도", years_options, default=today.year)
     except: selected_year = st.radio("조회 연도", years_options, horizontal=True)
@@ -505,7 +496,7 @@ with tab4:
 
 with tab5:
     st.subheader("특수건강검진")
-    # [수정 3: 리스트 필터링] 특수검진 대상자만 보기
+    # [수정 3] 특수검진 대상자만 필터링 (체크 해제된 사람은 리스트에서 제외)
     target = dashboard_df[(dashboard_df['특수검진_대상'] == True)].copy()
     
     if not target.empty:
