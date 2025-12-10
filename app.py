@@ -4,15 +4,41 @@ from datetime import datetime, date, timedelta
 from github import Github
 import io
 
+# ★ [필수] 드래그 앤 드롭 기능을 위한 라이브러리 체크
+try:
+    from streamlit_sortables import sort_items
+except ImportError:
+    st.error("🚨 'streamlit-sortables' 라이브러리가 필요합니다. 터미널에 `pip install streamlit-sortables`를 입력하세요.")
+    st.stop()
+
 # --- [1. 시스템 설정] ---
 st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️")
 
-# CSS: 사이드바 폭 조정 및 스타일
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
-    div.stButton > button {width: 100%; border-radius: 6px;}
-    [data-testid="stSidebar"] {min-width: 500px;}
+    .st-emotion-cache-16idsys p {font-size: 1rem;}
+    
+    /* 버튼 스타일 */
+    div.stButton > button {
+        border-radius: 6px;
+        height: 38px;
+        width: 100%;
+        margin-top: 0px; 
+    }
+    
+    /* 카드 박스 스타일 */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 10px 15px !important;
+        margin-bottom: 8px !important;
+        border: 1px solid #e0e0e0;
+    }
+    
+    div[data-testid="stMarkdownContainer"] p {
+        margin-bottom: 0px !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -20,373 +46,479 @@ st.title("🛡️ 산업안전보건 통합 관리 시스템")
 st.markdown("---")
 
 # ==========================================
-# [설정] 공통 변수 및 함수
-# ==========================================
-SPECIAL_EDU_OPTIONS = [
-    "해당없음",
-    "4. 폭발성·물반응성·자기반응성·자기발열성 물질, 자연발화성 액체·고체 및 인화성 액체의 제조 또는 취급작업",
-    "35. 허가 및 관리 대상 유해물질의 제조 또는 취급작업"
-]
-
-ROLES = ["안전보건관리책임자", "관리감독자", "폐기물담당자", "일반근로자"]
-HEALTH_PHASES = ["배치전(미실시)", "1차검진 완료(다음:6개월)", "정기검진(다음:1년)"]
-
-def sanitize_config_df(df):
-    target_cols = ['특별교육과목1', '특별교육과목2']
-    for col in target_cols:
-        if col not in df.columns: df[col] = "해당없음"
-    for col in target_cols:
-        df[col] = df[col].astype(str).str.strip()
-        df[col] = df[col].apply(lambda x: x if x in SPECIAL_EDU_OPTIONS else "해당없음")
-    if '유해인자' not in df.columns: df['유해인자'] = "없음"
-    else: df['유해인자'] = df['유해인자'].fillna("없음")
-    return df
-
-# ==========================================
-# [사이드바] 모든 입력 및 설정 기능 통합
+# [GitHub 연동 설정]
 # ==========================================
 with st.sidebar:
-    st.header("⚙️ 통합 관리자 메뉴")
+    st.header("⚙️ 시스템 설정")
+    GITHUB_TOKEN = st.text_input("🔑 GitHub 토큰", type="password")
+    REPO_NAME = st.text_input("📂 레포지토리 (user/repo)")
+    DATA_FILE = "data.csv"
+    CONFIG_FILE = "config.csv"
+
+def get_github_repo():
+    if not GITHUB_TOKEN or not REPO_NAME:
+        return None
+    try:
+        g = Github(GITHUB_TOKEN)
+        return g.get_repo(REPO_NAME)
+    except Exception as e:
+        return None
+
+def save_all_to_github(data_df, config_df):
+    repo = get_github_repo()
+    if not repo: 
+        st.sidebar.error("토큰 확인 필요")
+        return
     
-    # 1. GitHub 및 서버 설정
-    with st.expander("☁️ 서버/저장소 연결", expanded=False):
-        if st.button("🔄 강제 새로고침 (오류 해결용)", type="primary"):
-            st.cache_data.clear()
-            st.session_state.clear()
-            st.rerun()
-        GITHUB_TOKEN = st.text_input("🔑 GitHub 토큰", type="password")
-        REPO_NAME = st.text_input("📂 레포지토리 (user/repo)")
-        DATA_FILE = "data.csv"
-        CONFIG_FILE = "config.csv"
-
-    def get_github_repo():
-        if not GITHUB_TOKEN or not REPO_NAME: return None
-        try: return Github(GITHUB_TOKEN).get_repo(REPO_NAME)
-        except: return None
-
-    def save_all_to_github(data_df, config_df):
-        repo = get_github_repo()
-        if not repo: 
-            st.error("토큰 확인 필요")
-            return
-        try:
-            # 날짜 객체를 문자열로 변환하여 저장 (충돌 방지)
-            save_df = data_df.copy()
-            date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
-            for col in date_cols:
-                if col in save_df.columns:
-                    save_df[col] = save_df[col].astype(str).replace('NaT', '')
-
-            data_content = save_df.to_csv(index=False)
-            try:
-                contents = repo.get_contents(DATA_FILE)
-                repo.update_file(DATA_FILE, f"Update data: {datetime.now()}", data_content, contents.sha)
-            except:
-                repo.create_file(DATA_FILE, "Init data", data_content)
-            
-            config_content = config_df.to_csv(index=False)
-            try:
-                contents = repo.get_contents(CONFIG_FILE)
-                repo.update_file(CONFIG_FILE, f"Update config: {datetime.now()}", config_content, contents.sha)
-            except:
-                repo.create_file(CONFIG_FILE, "Init config", config_content)
-            st.toast("✅ 저장 완료! (검진일/단계 포함)", icon="☁️")
-        except Exception as e:
-            st.error(f"저장 실패: {e}")
-
-    def load_all_from_github():
-        repo = get_github_repo()
-        if not repo: return None, None
-        loaded_data, loaded_config = None, None
+    try:
+        # 데이터 저장
+        data_content = data_df.to_csv(index=False)
         try:
             contents = repo.get_contents(DATA_FILE)
-            csv_string = contents.decoded_content.decode("utf-8")
-            loaded_data = pd.read_csv(io.StringIO(csv_string))
+            repo.update_file(DATA_FILE, f"Update data: {datetime.now()}", data_content, contents.sha)
+        except:
+            repo.create_file(DATA_FILE, "Init data", data_content)
             
-            # [핵심] 불러온 데이터의 날짜 컬럼을 확실하게 date 객체로 변환
-            # 이 부분이 없으면 불러온 뒤 에디터에서 날짜가 안 보이거나 깨짐
-            date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
-            for col in date_cols:
-                if col in loaded_data.columns:
-                    loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce').dt.date
-            
-            # 검진단계 컬럼이 없으면 기본값으로 생성
-            if '검진단계' not in loaded_data.columns:
-                loaded_data['검진단계'] = "배치전(미실시)"
-            else:
-                loaded_data['검진단계'] = loaded_data['검진단계'].fillna("배치전(미실시)")
-
-        except: pass
+        # 설정 저장
+        config_content = config_df.to_csv(index=False)
         try:
             contents = repo.get_contents(CONFIG_FILE)
-            csv_string = contents.decoded_content.decode("utf-8")
-            loaded_config = pd.read_csv(io.StringIO(csv_string))
-            loaded_config = sanitize_config_df(loaded_config)
-        except: pass
-        return loaded_data, loaded_config
+            repo.update_file(CONFIG_FILE, f"Update config: {datetime.now()}", config_content, contents.sha)
+        except:
+            repo.create_file(CONFIG_FILE, "Init config", config_content)
 
-    st.divider()
+        st.toast("✅ 데이터가 안전하게 저장되었습니다!", icon="☁️")
+    except Exception as e:
+        st.sidebar.error(f"저장 실패: {e}")
 
-    # 2. 관리자 설정 (부서 매핑)
-    if 'dept_config_final' not in st.session_state:
-        st.session_state.dept_config_final = pd.DataFrame({
-            '정렬순서': [1, 2, 3, 4],
-            '부서명': ['용접팀', '전기팀', '밀폐작업팀', '일반관리팀'],
-            '특별교육과목1': ["해당없음"] * 4, '특별교육과목2': ["해당없음"] * 4,
-            '유해인자': ['용접흄, 분진', '전류(감전)', '산소결핍', '없음']
-        })
-    st.session_state.dept_config_final = sanitize_config_df(st.session_state.dept_config_final)
-
-    with st.expander("🛠️ 부서 및 교육 매핑 설정"):
-        dept_file = st.file_uploader("설정 파일 (xlsx/csv)", type=['csv', 'xlsx'], key="dept_up")
-        if dept_file:
-            try:
-                new_d = pd.read_csv(dept_file) if dept_file.name.endswith('.csv') else pd.read_excel(dept_file)
-                if st.button("부서 설정 덮어쓰기"):
-                    if '부서명' not in new_d.columns: st.error("부서명 컬럼 없음")
-                    else:
-                        new_d = new_d.rename(columns={'특별교육 1':'특별교육과목1', '특별교육 2':'특별교육과목2'})
-                        new_d = sanitize_config_df(new_d)
-                        cols = ['부서명', '특별교육과목1', '특별교육과목2', '유해인자']
-                        for c in cols: 
-                            if c not in new_d.columns: new_d[c] = "해당없음" if "특별" in c else "없음"
-                        final_d = pd.concat([st.session_state.dept_config_final[cols], new_d[cols]]).drop_duplicates(['부서명'], keep='last').reset_index(drop=True)
-                        final_d.insert(0, '정렬순서', range(1, len(final_d)+1))
-                        st.session_state.dept_config_final = final_d
-                        st.rerun()
-            except Exception as e: st.error(str(e))
-
-        st.caption("아래 표를 직접 수정하세요.")
-        sorted_df = st.session_state.dept_config_final.sort_values('정렬순서')
-        edited_dept_config = st.data_editor(
-            sorted_df, num_rows="dynamic", key="dept_editor_sidebar", use_container_width=True, hide_index=True,
-            column_config={
-                "부서명": st.column_config.TextColumn("부서명"),
-                "특별교육과목1": st.column_config.SelectboxColumn("특별교육 1", width="medium", options=SPECIAL_EDU_OPTIONS),
-                "특별교육과목2": st.column_config.SelectboxColumn("특별교육 2", width="medium", options=SPECIAL_EDU_OPTIONS),
-                "유해인자": st.column_config.TextColumn("유해인자")
-            }
-        )
-        if not sorted_df.equals(edited_dept_config):
-            st.session_state.dept_config_final = edited_dept_config
-
-    DEPT_S1 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목1']))
-    DEPT_S2 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목2']))
-    DEPT_FAC = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['유해인자']))
-    DEPTS_LIST = list(st.session_state.dept_config_final['부서명'])
-
-    st.divider()
-
-    # 3. 데이터 저장/로드 및 명부 수정
-    st.subheader("📝 근로자 명부 관리")
+def load_all_from_github():
+    repo = get_github_repo()
+    if not repo: return None, None
     
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("📂 불러오기"):
-            ld, lc = load_all_from_github()
-            # [중요] 불러온 데이터가 있으면 세션에 확실히 반영
-            if ld is not None: 
-                st.session_state.df_final = ld
-                st.toast("데이터 불러오기 성공!", icon="✅")
-            if lc is not None: st.session_state.dept_config_final = lc
-            st.rerun()
-    with c2:
-        if st.button("💾 저장하기", type="primary"):
-            save_all_to_github(st.session_state.df_final, st.session_state.dept_config_final)
-
-    # 데이터 초기화 (처음 실행 시)
-    if 'df_final' not in st.session_state:
-        data = {
-            '성명': ['김철수', '이영희', '박신규', '최신규', '정전기', '강폐기'],
-            '직책': ['안전보건관리책임자', '관리감독자', '일반근로자', '일반근로자', '일반근로자', '폐기물담당자'],
-            '부서': ['일반관리팀', '일반관리팀', '용접팀', '용접팀', '전기팀', '일반관리팀'],
-            '입사일': [date(2022, 1, 1), date(2023, 5, 20), date.today(), date(2020, 1, 1), date(2023, 6, 1), date(2020, 1, 1)],
-            '최근_직무교육일': [date(2023, 5, 1), date(2024, 5, 20), None, None, None, date(2022, 5, 1)],
-            '신규교육_이수': [False, False, False, False, False, False],
-            '특별_공통_8H': [False, False, False, False, True, False],
-            '검진단계': ['배치전(미실시)', '배치전(미실시)', '배치전(미실시)', '배치전(미실시)', '1차검진 완료(다음:6개월)', '배치전(미실시)'], 
-            '최근_특수검진일': [None, None, None, None, date(2024, 12, 1), None],
-            '특수검진_대상': [True, True, True, True, True, False] 
-        }
-        st.session_state.df_final = pd.DataFrame(data)
-
-    # 데이터 타입 강제 변환 (날짜/시간 제거)
-    date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
-    for col in date_cols:
-        if col in st.session_state.df_final.columns:
-            st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce').dt.date
-
-    # 체크박스용 컬럼 변환
-    bool_cols = ['퇴사여부', '특수검진_대상']
-    for col in bool_cols:
-        if col not in st.session_state.df_final.columns:
-            st.session_state.df_final[col] = True if col == '특수검진_대상' else False
-        else:
-            st.session_state.df_final[col] = st.session_state.df_final[col].fillna(False).astype(bool)
-
-    # 기타 컬럼 보장
-    required_columns = ['신규교육_이수', '특별_공통_8H', '특별_1_이론_4H', '특별_1_실습_4H', '특별_2_이론_4H', '특별_2_실습_4H']
-    for col in required_columns:
-        if col not in st.session_state.df_final.columns:
-            st.session_state.df_final[col] = False
-
-    with st.expander("📂 명부 파일 등록"):
-        up_file = st.file_uploader("명부 파일 (xlsx/csv)", type=['csv', 'xlsx'], key="worker_up")
-        if up_file:
-            try:
-                new_df = pd.read_csv(up_file) if up_file.name.endswith('.csv') else pd.read_excel(up_file)
-                if st.button("명부 병합하기"):
-                    if '성명' not in new_df.columns: st.error("성명 컬럼 필수")
-                    else:
-                        for c in st.session_state.df_final.columns:
-                            if c not in new_df.columns: new_df[c] = None
-                        if '특수검진_대상' in new_df.columns:
-                            new_df['특수검진_대상'] = new_df['특수검진_대상'].fillna(True).astype(bool)
-                        else: new_df['특수검진_대상'] = True
-                        st.session_state.df_final = pd.concat([st.session_state.df_final, new_df[st.session_state.df_final.columns]], ignore_index=True)
-                        st.rerun()
-            except Exception as e: st.error(str(e))
-
-    st.markdown("##### 👥 명부 직접 수정")
-    st.caption("특수검진 제외는 여기서 체크 해제")
+    loaded_data = None
+    loaded_config = None
     
-    edited_df = st.data_editor(
-        st.session_state.df_final,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="main_editor_sidebar",
-        column_config={
-            "퇴사여부": st.column_config.CheckboxColumn("퇴사", default=False, width="small"),
-            "특수검진_대상": st.column_config.CheckboxColumn("검진대상", default=True, width="small"),
-            "성명": st.column_config.TextColumn("성명", width="medium"),
-            "직책": st.column_config.SelectboxColumn("직책", options=ROLES, width="medium"),
-            "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST, width="medium"),
-            "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-            "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-            "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-            "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES)
-        }
-    )
-    # 사이드바 에디터에서 수정된 내용 즉시 반영
-    if not st.session_state.df_final.equals(edited_df):
-        st.session_state.df_final = edited_df
+    try:
+        contents = repo.get_contents(DATA_FILE)
+        csv_string = contents.decoded_content.decode("utf-8")
+        loaded_data = pd.read_csv(io.StringIO(csv_string))
+        date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
+        for col in date_cols:
+            if col in loaded_data.columns:
+                loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce').dt.date
+    except:
+        pass
 
-# ==========================================
-# [메인 화면] 계산 및 대시보드 출력
-# ==========================================
-
-# 1. 계산 로직
-df = st.session_state.df_final.copy()
-today = date.today()
-
-for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
-    if col in df.columns: 
-        df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
-
-df['특별교육_과목1'] = df['부서'].map(DEPT_S1).fillna("설정필요")
-df['특별교육_과목2'] = df['부서'].map(DEPT_S2).fillna("해당없음")
-df['유해인자'] = df['부서'].map(DEPT_FAC).fillna("없음")
-
-# [요청 반영] 유해인자가 '없음'이면 특수검진 대상 강제 해제
-mask_no_factor = df['유해인자'].isin(['없음', '', '해당없음'])
-df.loc[mask_no_factor, '특수검진_대상'] = False
-
-def add_days(d, days):
-    try: 
-        if pd.isna(d): return None
-        return d + timedelta(days=days)
-    except: return None
-
-df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce')
-df['입사연도'] = df['입사일_dt'].dt.year
-df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
-
-df['다음_직무교육일'] = None
-df.loc[df['직책']=='안전보건관리책임자', '다음_직무교육일'] = df['최근_직무교육일'].apply(lambda x: add_days(x, 730))
-df.loc[df['직책']=='관리감독자', '다음_직무교육일'] = df['최근_직무교육일'].apply(lambda x: add_days(x, 365))
-mask_waste = df['직책'].astype(str).str.strip() == '폐기물담당자'
-df.loc[mask_waste, '다음_직무교육일'] = df[mask_waste]['최근_직무교육일'].apply(lambda x: add_days(x, 1095))
-
-def calc_next_health(row):
-    if not row.get('특수검진_대상', True): return None 
-    if row['검진단계'] == "배치전(미실시)" or pd.isna(row['최근_특수검진일']): return None
-    cycle = 180 if row['검진단계'] == "1차검진 완료(다음:6개월)" else 365
-    return add_days(row['최근_특수검진일'], cycle)
-
-df['다음_특수검진일'] = df.apply(calc_next_health, axis=1)
-dashboard_df = df[df['퇴사여부'] == False]
-
-# 2. 대시보드 출력
-col1, col2, col3, col4 = st.columns(4)
-with col1: st.metric("👥 총 관리 인원", f"{len(dashboard_df)}명")
-with col2: st.metric("🌱 신규 입사자", f"{len(dashboard_df[dashboard_df['법적_신규자']])}명")
-with col3: st.metric("👔 책임자/감독자", f"{len(dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])])}명")
-with col4: st.metric("🏥 검진 대상", f"{len(dashboard_df[dashboard_df['특수검진_대상'] == True])}명")
-
-st.divider()
-
-# 3. 탭 구성
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 입사자", "⚠️ 특별교육", "🏥 특수건강검진"])
-
-def safe_update_simple(target_df, key, cols):
-    st.data_editor(
-        target_df.reset_index(drop=True), 
-        key=key, hide_index=True, use_container_width=True, 
-        column_config=cols
-    )
-
-with tab1:
-    target = dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])].copy()
-    if not target.empty:
-        target['상태'] = target.apply(lambda r: "🔴 초과" if pd.isna(r['다음_직무교육일']) or (r['다음_직무교육일']-today).days<0 else "🟢 양호", axis=1)
-        safe_update_simple(target[['성명','직책','최근_직무교육일','다음_직무교육일','상태']], "t1", {"최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), "다음_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD")})
-    else: st.info("대상자 없음")
-
-with tab2:
-    target = dashboard_df[dashboard_df['직책'].astype(str).str.strip() == '폐기물담당자'].copy()
-    if not target.empty:
-        target['상태'] = target.apply(lambda r: "🔴 필요" if pd.isna(r['최근_직무교육일']) else ("🔴 초과" if (r['다음_직무교육일']-today).days<0 else "🟢 양호"), axis=1)
-        safe_update_simple(target[['성명','부서','최근_직무교육일','다음_직무교육일','상태']], "t2", {"최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), "다음_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD")})
-    else: st.info("대상자 없음")
-
-with tab3:
-    years = [today.year, today.year-1, today.year-2]
-    sel_y = st.radio("입사년도 선택", years, horizontal=True)
-    target = dashboard_df[dashboard_df['입사연도'] == sel_y].copy()
-    safe_update_simple(target[['신규교육_이수','성명','입사일','부서']], "t3", {"입사일": st.column_config.DateColumn(format="YYYY-MM-DD")})
-
-with tab4:
-    target = dashboard_df[dashboard_df['특별교육_과목1'] != '해당없음'].copy()
-    safe_update_simple(target[['성명','부서','특별_공통_8H','특별교육_과목1','특별_1_이론_4H','특별_1_실습_4H']], "t4", {})
-
-# [탭 5] 특수건강검진
-with tab5:
-    st.subheader("특수건강검진 현황")
-    
-    # 1. 특수검진 대상 체크 & 유해인자 있는 사람만
-    target_indices = dashboard_df[dashboard_df['특수검진_대상'] == True].index
-    target = dashboard_df.loc[target_indices].copy()
-    
-    if not target.empty:
-        target['상태'] = target.apply(lambda r: "🔴 검진필요" if r['검진단계']=="배치전(미실시)" else ("🔴 초과" if pd.notnull(r['다음_특수검진일']) and (r['다음_특수검진일']-today).days<0 else "🟢 양호"), axis=1)
+    try:
+        contents = repo.get_contents(CONFIG_FILE)
+        csv_string = contents.decoded_content.decode("utf-8")
+        loaded_config = pd.read_csv(io.StringIO(csv_string))
+    except:
+        pass
         
-        edited_target = st.data_editor(
-            target[['성명','부서','유해인자','검진단계','최근_특수검진일','다음_특수검진일','상태']],
-            key="health_editor_fix",
+    return loaded_data, loaded_config
+
+# --- [2. 사용자 설정 (관리자 메뉴) - 드래그 앤 드롭 적용] ---
+if 'dept_config' not in st.session_state:
+    st.session_state.dept_config = pd.DataFrame({
+        '정렬순서': [1, 2, 3, 4],
+        '부서명': ['용접팀', '전기팀', '밀폐작업팀', '일반관리팀'],
+        '특별교육과목1': ['아크용접 등 화기작업', '고압 전기 취급 작업', '밀폐공간 내부 작업', '해당없음'],
+        '특별교육과목2': ['그라인더 작업', '해당없음', '해당없음', '해당없음'],
+        '유해인자': ['용접흄, 분진', '전류(감전)', '산소결핍', '없음']
+    })
+
+# 안전장치
+for col in ['정렬순서', '부서명', '특별교육과목1', '특별교육과목2', '유해인자']:
+    if col not in st.session_state.dept_config.columns:
+        if col == '정렬순서':
+             st.session_state.dept_config.insert(0, '정렬순서', range(1, len(st.session_state.dept_config) + 1))
+        else:
+            st.session_state.dept_config[col] = '해당없음'
+
+with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", expanded=False):
+    
+    m_tab1, m_tab2 = st.tabs(["⇅ 부서 순서 조정 (드래그)", "📝 교육 내용 편집"])
+    
+    with m_tab1:
+        st.info("💡 부서 박스를 마우스로 드래그해서 순서를 바꾸세요.")
+        
+        current_df = st.session_state.dept_config.sort_values('정렬순서')
+        current_items = current_df['부서명'].tolist()
+        
+        # 드래그 앤 드롭
+        sorted_items = sort_items(current_items, direction="vertical")
+        
+        if sorted_items != current_items:
+            new_df = current_df.set_index('부서명').reindex(sorted_items).reset_index()
+            new_df['정렬순서'] = range(1, len(new_df) + 1)
+            st.session_state.dept_config = new_df
+            st.rerun()
+
+    with m_tab2:
+        st.caption("여기서는 각 부서의 교육 과목과 유해인자를 수정합니다.")
+        sorted_df = st.session_state.dept_config.sort_values('정렬순서')
+        
+        edited_dept_config = st.data_editor(
+            sorted_df,
+            num_rows="dynamic", 
+            key="dept_editor", 
             use_container_width=True,
             hide_index=True,
             column_config={
-                "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                "다음_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD", disabled=True),
-                "상태": st.column_config.TextColumn(disabled=True),
-                "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES, required=True)
+                "정렬순서": None, 
+                "부서명": st.column_config.TextColumn("부서명", required=True),
+                "특별교육과목1": st.column_config.TextColumn("특별교육 1", width="medium"),
+                "특별교육과목2": st.column_config.TextColumn("특별교육 2", width="medium"),
+                "유해인자": st.column_config.TextColumn("유해인자", width="medium"),
             }
         )
-        edited_target.index = target.index
-        compare_cols = ['검진단계', '최근_특수검진일']
+        if not sorted_df.equals(edited_dept_config):
+             st.session_state.dept_config = edited_dept_config
+    
+    # 매핑 업데이트
+    current_config = st.session_state.dept_config
+    DEPT_SUB1_MAP = dict(zip(current_config['부서명'], current_config['특별교육과목1']))
+    DEPT_SUB2_MAP = dict(zip(current_config['부서명'], current_config['특별교육과목2']))
+    DEPT_FACTOR_MAP = dict(zip(current_config['부서명'], current_config['유해인자']))
+    DEPTS_LIST = list(current_config['부서명'])
+
+# --- [3. 메인 데이터 초기화] ---
+ROLES = ["안전보건관리책임자", "관리감독자", "폐기물담당자", "일반근로자"]
+HEALTH_PHASES = ["배치전(미실시)", "1차검진 완료(다음:6개월)", "정기검진(다음:1년)"]
+
+if 'df' not in st.session_state:
+    data = {
+        '성명': ['김철수', '이영희', '박신규', '최신규', '정전기', '강폐기'],
+        '직책': ['안전보건관리책임자', '관리감독자', '일반근로자', '일반근로자', '일반근로자', '폐기물담당자'],
+        '부서': ['일반관리팀', '일반관리팀', '용접팀', '용접팀', '전기팀', '일반관리팀'],
+        '입사일': [date(2022, 1, 1), date(2023, 5, 20), date.today(), date(2020, 1, 1), date(2023, 6, 1), date(2020, 1, 1)],
+        '최근_직무교육일': [date(2023, 5, 1), date(2024, 5, 20), None, None, None, date(2022, 5, 1)],
+        '신규교육_이수': [False, False, False, False, False, False],
+        '특별_공통_8H': [False, False, False, False, True, False],
+        '특별_1_이론_4H': [False, False, False, False, True, False],
+        '특별_1_실습_4H': [False, False, False, False, True, False],
+        '특별_2_이론_4H': [False, False, False, False, False, False],
+        '특별_2_실습_4H': [False, False, False, False, False, False],
+        '검진단계': ['배치전(미실시)', '배치전(미실시)', '배치전(미실시)', '배치전(미실시)', '1차검진 완료(다음:6개월)', '배치전(미실시)'], 
+        '최근_특수검진일': [None, None, None, None, date(2024, 12, 1), None]
+    }
+    st.session_state.df = pd.DataFrame(data)
+
+# 필수 컬럼 보장
+required_columns = ['퇴사여부', '신규교육_이수', '특별_공통_8H', '특별_1_이론_4H', '특별_1_실습_4H', '특별_2_이론_4H', '특별_2_실습_4H']
+for col in required_columns:
+    if col not in st.session_state.df.columns:
+        st.session_state.df[col] = False
+
+# --- [4. 메인 대시보드 (통계 카드)] ---
+df = st.session_state.df.copy()
+today = date.today()
+
+# 데이터 전처리
+df['특별교육_과목1'] = df['부서'].map(DEPT_SUB1_MAP).fillna("설정필요")
+df['특별교육_과목2'] = df['부서'].map(DEPT_SUB2_MAP).fillna("해당없음")
+df['유해인자'] = df['부서'].map(DEPT_FACTOR_MAP).fillna("확인필요")
+
+def add_days(d, days):
+    if pd.isna(d) or d == "": return None
+    return d + timedelta(days=days)
+
+df['입사일_dt'] = pd.to_datetime(df['입사일'], errors='coerce')
+df['입사연도'] = df['입사일_dt'].dt.year
+df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
+
+# 주기 계산
+df['다음_직무교육일'] = None
+mask_manager = df['직책'] == '안전보건관리책임자'
+df.loc[mask_manager, '다음_직무교육일'] = df[mask_manager]['최근_직무교육일'].apply(lambda x: add_days(x, 730))
+mask_supervisor = df['직책'] == '관리감독자'
+df.loc[mask_supervisor, '다음_직무교육일'] = df[mask_supervisor]['최근_직무교육일'].apply(lambda x: add_days(x, 365))
+mask_waste = df['직책'] == '폐기물담당자'
+df.loc[mask_waste, '다음_직무교육일'] = df[mask_waste]['최근_직무교육일'].apply(lambda x: add_days(x, 1095))
+
+# 특수검진
+def calc_next_health(row):
+    if row['유해인자'] in ['없음', 'None', '', None]: return None
+    status = row['검진단계']
+    if status == "배치전(미실시)": return None 
+    if pd.isna(row['최근_특수검진일']): return None
+    cycle = 180 if status == "1차검진 완료(다음:6개월)" else 365
+    return row['최근_특수검진일'] + timedelta(days=cycle)
+
+df['다음_특수검진일'] = df.apply(calc_next_health, axis=1)
+
+# 대시보드용 (퇴사자 제외)
+dashboard_df = df[df['퇴사여부'] == False].copy()
+
+# === [상단 요약 대시보드] ===
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.metric("👥 총 관리 인원", f"{len(dashboard_df)}명")
+with col2:
+    new_hires = len(dashboard_df[dashboard_df['법적_신규자']])
+    st.metric("🌱 신규 입사자", f"{new_hires}명")
+with col3:
+    managers = len(dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])])
+    st.metric("👔 책임자/감독자", f"{managers}명")
+with col4:
+    health_target = len(dashboard_df[(dashboard_df['유해인자'].notna()) & (dashboard_df['유해인자'] != '없음')])
+    st.metric("🏥 검진 대상", f"{health_target}명")
+
+st.markdown("---")
+
+# --- [5. 데이터 입력 및 저장 (사이드바)] ---
+with st.sidebar:
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("📂 불러오기", use_container_width=True):
+            ld, lc = load_all_from_github()
+            if ld is not None: st.session_state.df = ld
+            if lc is not None: st.session_state.dept_config = lc
+            st.rerun()
+    with c2:
+        if st.button("💾 저장하기", type="primary", use_container_width=True):
+            save_all_to_github(st.session_state.df, st.session_state.dept_config)
+            
+    st.divider()
+    st.markdown("### 📝 근로자 명부 수정")
+    
+    edited_df = st.data_editor(
+        st.session_state.df,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="main_editor",
+        column_config={
+            "퇴사여부": st.column_config.CheckboxColumn("퇴사", default=False),
+            "성명": st.column_config.TextColumn("성명", required=True),
+            "직책": st.column_config.SelectboxColumn("직책", options=ROLES),
+            "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST),
+            "입사일": st.column_config.DateColumn("입사일", format="YYYY-MM-DD"),
+            # 나머지 숨김
+            "최근_직무교육일": st.column_config.DateColumn("최근 직무교육일"), 
+            "신규교육_이수": None, "특별_공통_8H": None,
+            "특별_1_이론_4H": None, "특별_1_실습_4H": None,
+            "특별_2_이론_4H": None, "특별_2_실습_4H": None,
+            "검진단계": None, "최근_특수검진일": None
+        }
+    )
+    st.session_state.df = edited_df.copy()
+
+# Helper
+def add_numbering(dataframe):
+    df_numbered = dataframe.reset_index(drop=True)
+    df_numbered.insert(0, 'No', df_numbered.index + 1)
+    return df_numbered
+
+# --- [6. 탭 화면 구성] ---
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 입사자", "⚠️ 특별교육", "🏥 특수건강검진"
+])
+
+with tab1:
+    st.subheader("안전보건관리책임자 / 관리감독자")
+    target = dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])].copy()
+    
+    def check_mgr_status(row):
+        if pd.isna(row['다음_직무교육일']): return None
+        days = (row['다음_직무교육일'] - today).days
+        if days < 0: return "기한초과"
+        if days < 30: return "임박"
+        return "양호"
+    
+    if not target.empty:
+        target['상태'] = target.apply(check_mgr_status, axis=1)
+        target_display = add_numbering(target[['성명', '직책', '최근_직무교육일', '다음_직무교육일', '상태']])
+        st.dataframe(
+            target_display, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "No": st.column_config.NumberColumn("No", width="small"),
+                "상태": st.column_config.StatusColumn(
+                    "상태", width="small",
+                    options_dict={"양호": "success", "임박": "warning", "기한초과": "error"}
+                )
+            }
+        )
+    else:
+        st.info("대상자가 없습니다.")
+
+with tab2:
+    st.subheader("폐기물 담당자 (3년 주기)")
+    target = dashboard_df[dashboard_df['직책'] == '폐기물담당자'].copy()
+    
+    def check_waste_status(row):
+        if pd.isna(row['다음_직무교육일']): return "교육필요"
+        days_left = (row['다음_직무교육일'] - today).days
+        if days_left < 0: return "기한초과"
+        return "양호"
         
-        # 2. 수정 발생 시 세션에 저장 (자동 반영)
-        if not target[compare_cols].equals(edited_target[compare_cols]):
-            st.session_state.df_final.loc[target_indices, compare_cols] = edited_target[compare_cols]
-    else: 
-        st.info("대상자가 없습니다. 왼쪽 사이드바 명부에서 검진대상을 체크해주세요. (유해인자가 '없음'인 경우 자동으로 제외됩니다)")
+    if not target.empty:
+        target['상태'] = target.apply(check_waste_status, axis=1)
+        final_view = add_numbering(target[['성명', '부서', '최근_직무교육일', '다음_직무교육일', '상태']])
+        st.dataframe(
+            final_view, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "No": st.column_config.NumberColumn("No", width="small"),
+                "상태": st.column_config.StatusColumn(
+                    "상태", width="small",
+                    options_dict={"양호": "success", "교육필요": "warning", "기한초과": "error"}
+                )
+            }
+        )
+    else:
+        st.info("폐기물 담당자가 없습니다.")
+
+with tab3:
+    st.subheader("신규 입사자 교육 현황")
+    current_year = today.year
+    recent_years = [current_year, current_year-1, current_year-2]
+    selected_year = st.pills("조회 연도", recent_years, default=current_year)
+    
+    mask_new = dashboard_df['입사연도'] == selected_year
+    new_hire_view = dashboard_df[mask_new].copy()
+    
+    if new_hire_view.empty:
+        st.info(f"{selected_year}년도 입사자가 없습니다.")
+    else:
+        new_hire_view = add_numbering(new_hire_view)
+        
+        # ★ 신규교육 이수 체크박스
+        edited_new_hires = st.data_editor(
+            new_hire_view,
+            key="editor_new_hire",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "No": st.column_config.NumberColumn("No", width="small"),
+                "신규교육_이수": st.column_config.CheckboxColumn("교육 이수", width="small"),
+                "성명": st.column_config.TextColumn("성명", disabled=True),
+                "입사일": st.column_config.DateColumn("입사일", disabled=True),
+                "부서": st.column_config.TextColumn("부서", disabled=True),
+                "직책": None, "최근_직무교육일": None, "퇴사여부": None,
+                "특별_공통_8H": None, "특별_1_이론_4H": None, "특별_1_실습_4H": None,
+                "특별_2_이론_4H": None, "특별_2_실습_4H": None,
+                "검진단계": None, "최근_특수검진일": None, "특별교육_과목1": None, 
+                "특별교육_과목2": None, "유해인자": None, "입사일_dt": None, 
+                "입사연도": None, "법적_신규자": None, "다음_직무교육일": None, "다음_특수검진일": None
+            }
+        )
+        if not new_hire_view.equals(edited_new_hires):
+            # 체크박스 변경 시 원본 반영
+            for index, row in edited_new_hires.iterrows():
+                name = row['성명']
+                idx = st.session_state.df[st.session_state.df['성명'] == name].index
+                if not idx.empty:
+                    st.session_state.df.loc[idx, '신규교육_이수'] = row['신규교육_이수']
+            st.rerun()
+
+with tab4:
+    st.subheader("특별안전보건교육")
+    mask_special = dashboard_df['특별교육_과목1'] != '해당없음'
+    special_view = dashboard_df[mask_special].copy()
+    
+    if special_view.empty:
+        st.info("특별교육 대상자가 없습니다.")
+    else:
+        # 신규 입사자는 공통8H 자동 체크
+        special_view.loc[special_view['법적_신규자'] == True, '특별_공통_8H'] = True
+        special_view = add_numbering(special_view)
+        
+        # ★ 요청하신 컬럼 순서 및 명칭 적용
+        col_order = [
+            "No", "성명", "부서", "법적_신규자", "특별_공통_8H", 
+            "특별교육_과목1", "특별_1_이론_4H", "특별_1_실습_4H",
+            "특별교육_과목2", "특별_2_이론_4H", "특별_2_실습_4H"
+        ]
+        
+        edited_special = st.data_editor(
+            special_view,
+            key="editor_special",
+            use_container_width=True,
+            hide_index=True,
+            column_order=col_order,
+            column_config={
+                "No": st.column_config.NumberColumn("No", width="small"),
+                "성명": st.column_config.TextColumn("성명", disabled=True),
+                "부서": st.column_config.TextColumn("부서", disabled=True),
+                "법적_신규자": st.column_config.CheckboxColumn("신규 입사자", disabled=True, width="small"),
+                "특별_공통_8H": st.column_config.CheckboxColumn("공통8H", width="small"),
+                
+                "특별교육_과목1": st.column_config.TextColumn("과목1 과목명", disabled=True),
+                "특별_1_이론_4H": st.column_config.CheckboxColumn("과목1_온라인4H", width="small"),
+                "특별_1_실습_4H": st.column_config.CheckboxColumn("과목1_관리감독자4H", width="small"),
+                
+                "특별교육_과목2": st.column_config.TextColumn("과목2 과목명", disabled=True),
+                "특별_2_이론_4H": st.column_config.CheckboxColumn("과목2_온라인4H", width="small"),
+                "특별_2_실습_4H": st.column_config.CheckboxColumn("과목2_관리감독자", width="small"),
+                
+                # 나머지 숨김
+                "직책": None, "입사일": None, "퇴사여부": None, "최근_직무교육일": None,
+                "신규교육_이수": None, "검진단계": None, "최근_특수검진일": None, "유해인자": None,
+                "입사일_dt": None, "입사연도": None, "다음_직무교육일": None, "다음_특수검진일": None
+            }
+        )
+        if not special_view.equals(edited_special):
+            cols_check = ['특별_공통_8H', '특별_1_이론_4H', '특별_1_실습_4H', '특별_2_이론_4H', '특별_2_실습_4H']
+            for index, row in edited_special.iterrows():
+                name = row['성명']
+                idx = st.session_state.df[st.session_state.df['성명'] == name].index
+                if not idx.empty:
+                    st.session_state.df.loc[idx, cols_check] = row[cols_check]
+            st.rerun()
+
+with tab5:
+    st.subheader("특수건강검진")
+    mask_health = (dashboard_df['유해인자'].notna()) & (dashboard_df['유해인자'] != '없음')
+    health_view = dashboard_df[mask_health].copy()
+    
+    if health_view.empty:
+        st.info("특수검진 대상자가 없습니다.")
+    else:
+        def get_status_label(row):
+            if row['검진단계'] == "배치전(미실시)": return "검진필요"
+            if pd.isna(row['다음_특수검진일']): return "-"
+            days = (row['다음_특수검진일'] - today).days
+            if days < 0: return "기한초과"
+            if days < 30: return "임박"
+            return "양호"
+
+        health_view['현재상태'] = health_view.apply(get_status_label, axis=1)
+        health_view = add_numbering(health_view)
+
+        edited_health = st.data_editor(
+            health_view,
+            key="editor_health",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "No": st.column_config.NumberColumn("No", width="small"),
+                "성명": st.column_config.TextColumn("성명", disabled=True),
+                "부서": st.column_config.TextColumn("부서", disabled=True),
+                "유해인자": st.column_config.TextColumn("유해인자", disabled=True),
+                "검진단계": st.column_config.SelectboxColumn("검진단계", options=HEALTH_PHASES, required=True),
+                "최근_특수검진일": st.column_config.DateColumn("최근 검진일"),
+                "다음_특수검진일": st.column_config.DateColumn("다음 예정일", disabled=True),
+                "현재상태": st.column_config.StatusColumn(
+                    "상태", width="small",
+                    options_dict={"양호": "success", "임박": "warning", "기한초과": "error", "검진필요": "error"}
+                ),
+                # 교육 컬럼 확실히 숨김
+                "직책": None, "입사일": None, "퇴사여부": None, "최근_직무교육일": None,
+                "신규교육_이수": None, "특별_공통_8H": None, "특별_1_이론_4H": None, 
+                "특별_1_실습_4H": None, "특별_2_이론_4H": None, "특별_2_실습_4H": None,
+                "특별교육_과목1": None, "특별교육_과목2": None, "입사일_dt": None, 
+                "입사연도": None, "법적_신규자": None, "다음_직무교육일": None
+            }
+        )
+        if not health_view.equals(edited_health):
+            cols_to_update = ['검진단계', '최근_특수검진일']
+            for index, row in edited_health.iterrows():
+                name = row['성명']
+                idx = st.session_state.df[st.session_state.df['성명'] == name].index
+                if not idx.empty:
+                    st.session_state.df.loc[idx, cols_to_update] = row[cols_to_update]
+            st.rerun()
