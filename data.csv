@@ -1,7 +1,8 @@
-성명,직책,부서,입사일,최근_직무교육일,특별_공통8H,특별_온라인4H,특별_감독자4H,검진단계,최근_특수검진일,퇴사여부
-김원중,안전보건관리책임자,일반관리팀,,2025-11-07,False,False,False,배치전(미실시),,False
-장재석,관리감독자,일반관리팀,,2025-11-03,False,False,False,배치전(미실시),,False
-임승현,관리감독자,용접팀,,2025-11-03,False,False,False,배치전(미실시),,False
-구홍규,관리감독자,재무팀,,2025-11-03,False,False,False,배치전(미실시),,False
-이재환,관리감독자,프로젝트사업팀,,2025-11-03,False,False,False,1차검진 완료(다음:6개월),2024-12-01,False
-하헌재,관리감독자,생산팀,,2025-11-03,False,False,False,배치전(미실시),,False
+성명,직책,부서,입사일,최근_직무교육일,특별_공통8H,특별_온라인4H,특별_감독자4H,검진단계,최근_특수검진일,퇴사여부,신규교육_이수,특별_이수_1,특별_이수_2
+김원중,안전보건관리책임자,일반관리팀,,2025-11-07,False,False,False,배치전(미실시),,False,False,False,False
+장재석,관리감독자,일반관리팀,,2025-11-03,False,False,False,배치전(미실시),,False,False,False,False
+임승현,관리감독자,용접팀,,2025-11-03,False,False,False,배치전(미실시),,False,False,False,False
+구홍규,관리감독자,재무팀,,2025-11-03,False,False,False,배치전(미실시),,False,False,False,False
+이재환,관리감독자,프로젝트사업팀,,2025-11-03,False,False,False,1차검진 완료(다음:6개월),2024-12-01,False,False,False,False
+하헌재,관리감독자,생산팀,,2025-11-03,False,False,False,배치전(미실시),,False,False,False,False
+하헌재,폐기물담당자,,,,,,,,,False,,,
