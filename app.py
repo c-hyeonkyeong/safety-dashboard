@@ -35,16 +35,33 @@ st.markdown("---")
 # ==========================================
 SPECIAL_EDU_OPTIONS = [
     "해당없음",
+    "아크용접 등 화기작업", 
+    "고압 전기 취급 작업", 
+    "밀폐공간 내부 작업", 
+    "그라인더 작업",
     "4. 폭발성·물반응성·자기반응성·자기발열성 물질, 자연발화성 액체·고체 및 인화성 액체의 제조 또는 취급작업",
     "35. 허가 및 관리 대상 유해물질의 제조 또는 취급작업"
 ]
 
 def sanitize_config_df(df):
+    """부서 설정 데이터의 유효성을 검사하고 정리하는 함수"""
     target_cols = ['특별교육과목1', '특별교육과목2']
+    # 없는 컬럼 생성
+    for col in target_cols:
+        if col not in df.columns:
+            df[col] = "해당없음"
+            
     for col in target_cols:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
+            # 옵션에 없는 값은 '해당없음'으로 강제 치환
             df[col] = df[col].apply(lambda x: x if x in SPECIAL_EDU_OPTIONS else "해당없음")
+            
+    if '유해인자' not in df.columns:
+        df['유해인자'] = "없음"
+    else:
+        df['유해인자'] = df['유해인자'].fillna("없음")
+        
     return df
 
 # ==========================================
@@ -126,7 +143,53 @@ for col in ['정렬순서', '부서명', '특별교육과목1', '특별교육과
             st.session_state.dept_config[col] = '해당없음'
 
 with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", expanded=False):
+    
+    # --- [추가 기능] 부서 일괄 등록 ---
+    with st.popover("📂 부서 설정 일괄 등록 (Excel/CSV)"):
+        st.markdown("##### 부서 설정 파일 업로드")
+        st.caption("필수 컬럼: **부서명** (나머지는 자동 채움)")
+        dept_file = st.file_uploader("파일 선택", type=['csv', 'xlsx'], key="dept_uploader")
+        
+        if dept_file:
+            try:
+                if dept_file.name.endswith('.csv'):
+                    df_dept_new = pd.read_csv(dept_file)
+                else:
+                    df_dept_new = pd.read_excel(dept_file)
+                
+                st.dataframe(df_dept_new.head(), height=100)
+                
+                if st.button("부서 등록 실행", type="primary"):
+                    if '부서명' not in df_dept_new.columns:
+                        st.error("필수 컬럼 '부서명'이 없습니다.")
+                    else:
+                        # 1. 데이터 정제 (옵션에 없는 값 처리)
+                        df_dept_new = sanitize_config_df(df_dept_new)
+                        
+                        # 2. 기존 데이터와 병합 (부서명 기준 중복 제거 - 덮어쓰기)
+                        current_df = st.session_state.dept_config
+                        
+                        # 필요한 컬럼만 추출
+                        cols = ['부서명', '특별교육과목1', '특별교육과목2', '유해인자']
+                        df_merged = pd.concat([current_df[cols], df_dept_new[cols]], ignore_index=True)
+                        
+                        # 중복된 부서명 제거 (나중에 들어온 것이 남음 = 업데이트 효과)
+                        df_merged = df_merged.drop_duplicates(subset=['부서명'], keep='last')
+                        
+                        # 3. 정렬 순서 재부여
+                        df_merged.reset_index(drop=True, inplace=True)
+                        df_merged.insert(0, '정렬순서', range(1, len(df_merged) + 1))
+                        
+                        st.session_state.dept_config = df_merged
+                        st.success(f"부서 {len(df_dept_new)}개 처리 완료!")
+                        st.rerun()
+            except Exception as e:
+                st.error(f"오류: {e}")
+
+    st.divider()
     st.caption("부서 순서를 변경하고, 각 부서에 해당하는 특별교육 및 유해인자를 설정하세요.")
+
+    # 1. 순서 변경 UI
     df_config = st.session_state.dept_config.sort_values('정렬순서')
     with st.container(border=True):
         for idx, row in df_config.iterrows():
@@ -255,56 +318,46 @@ with st.sidebar:
             save_all_to_github(st.session_state.df, st.session_state.dept_config)
     st.divider()
 
-    # --- [강력해진 일괄 등록] ---
+    # --- [근로자 명부 일괄 등록] ---
     with st.expander("📂 근로자 명부 일괄 등록", expanded=False):
         uploaded_file = st.file_uploader("파일 업로드 (xlsx/csv)", type=['csv', 'xlsx'])
         if uploaded_file:
-            # 1. 파일 읽기
             try:
                 if uploaded_file.name.endswith('.csv'):
                     df_new = pd.read_csv(uploaded_file)
                 else:
                     df_new = pd.read_excel(uploaded_file)
                 
-                # 2. 미리보기
                 st.caption(f"총 {len(df_new)}행 발견. 첫 5줄 미리보기:")
                 st.dataframe(df_new.head(), use_container_width=True, height=150)
 
-                # 3. 병합 버튼
                 if st.button("데이터 병합 실행", type="primary"):
                     if '성명' not in df_new.columns:
                         st.error("필수 컬럼 '성명'이 없습니다.")
                     else:
-                        # 컬럼 매칭 및 기본값 채우기
                         current_cols = st.session_state.df.columns
                         for col in current_cols:
                             if col not in df_new.columns:
-                                df_new[col] = None # 없으면 None 채움
+                                df_new[col] = None 
                         
-                        # 필요한 컬럼만 순서대로 가져오기
                         df_new = df_new[current_cols]
                         
-                        # 날짜 변환 (가장 중요)
                         date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
                         for col in date_cols:
-                            # 엑셀 Timestamp -> datetime.date로 안전 변환
                             df_new[col] = pd.to_datetime(df_new[col], errors='coerce').dt.date
                         
-                        # 불리언(True/False) 변환
                         bool_cols = [c for c in current_cols if '이수' in c or '4H' in c or '8H' in c or '여부' in c]
                         for col in bool_cols:
                             df_new[col] = df_new[col].fillna(False).astype(bool)
 
-                        # 병합 및 저장
                         st.session_state.df = pd.concat([st.session_state.df, df_new], ignore_index=True)
                         st.success(f"{len(df_new)}명 등록 완료!")
-                        st.rerun() # 여기서는 1회 리런 필요
+                        st.rerun()
 
             except Exception as e:
                 st.error(f"파일 읽기 오류: {e}")
 
     st.markdown("### 📝 근로자 명부 수정")
-    # 메인 에디터 (Rerun 방지 적용)
     edited_df = st.data_editor(
         st.session_state.df,
         num_rows="dynamic",
@@ -329,7 +382,6 @@ with st.sidebar:
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 입사자", "⚠️ 특별교육", "🏥 특수건강검진"])
 
 def safe_update_from_editor(subset_view, editor_key, visible_cols):
-    # 인덱스 유지 + No 컬럼 표시용 생성
     view_with_no = subset_view.copy()
     view_with_no.insert(0, "No", range(1, len(view_with_no) + 1))
     
@@ -435,4 +487,3 @@ with tab5:
         }
         safe_update_from_editor(target[["성명", "부서", "유해인자", "검진단계", "최근_특수검진일", "다음_특수검진일", "상태"]], "editor_health", cols_config)
     else: st.info("대상자가 없습니다.")
-
