@@ -11,11 +11,17 @@ st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 20px;}
     .st-emotion-cache-16idsys p {font-size: 1.1rem;}
+    /* 버튼 스타일 조정 */
+    button[kind="secondary"] {
+        padding-top: 0px !important;
+        padding-bottom: 0px !important;
+        height: 35px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 st.title("🏗️ 산업안전보건 통합 관리 시스템")
-st.caption("특별교육 탭의 컬럼 순서와 명칭을 재구성하고, 특수검진 탭을 정리했습니다.")
+st.caption("관리자 메뉴에서 화살표 버튼을 클릭하여 부서 순서를 마우스로 쉽게 조정할 수 있습니다.")
 
 # ==========================================
 # [GitHub 연동 설정]
@@ -89,53 +95,94 @@ def load_all_from_github():
         
     return loaded_data, loaded_config
 
-# --- [2. 사용자 설정 (관리자 메뉴) - 마우스 정렬 적용] ---
+# --- [2. 사용자 설정 (관리자 메뉴) - 버튼식 순서 변경 적용] ---
 with st.expander("⚙️ [관리자 메뉴] 부서별 교육 및 유해인자 매핑 설정", expanded=False):
     if 'dept_config' not in st.session_state:
         st.session_state.dept_config = pd.DataFrame({
+            '정렬순서': [1, 2, 3, 4], # 순서 제어용 키
             '부서명': ['용접팀', '전기팀', '밀폐작업팀', '일반관리팀'],
             '특별교육과목1': ['아크용접 등 화기작업', '고압 전기 취급 작업', '밀폐공간 내부 작업', '해당없음'],
             '특별교육과목2': ['그라인더 작업', '해당없음', '해당없음', '해당없음'],
             '유해인자': ['용접흄, 분진', '전류(감전)', '산소결핍', '없음']
         })
     
-    req_cols = ['부서명', '특별교육과목1', '특별교육과목2', '유해인자']
+    # 데이터 정합성 체크
+    req_cols = ['정렬순서', '부서명', '특별교육과목1', '특별교육과목2', '유해인자']
     for col in req_cols:
         if col not in st.session_state.dept_config.columns:
-            st.session_state.dept_config[col] = '해당없음'
+            if col == '정렬순서':
+                 st.session_state.dept_config.insert(0, '정렬순서', range(1, len(st.session_state.dept_config) + 1))
+            else:
+                st.session_state.dept_config[col] = '해당없음'
 
-    current_depts = st.session_state.dept_config['부서명'].tolist()
-    st.info("👇 아래 박스에서 부서 태그를 마우스로 드래그하여 순서를 변경하세요.")
+    # ★ [순서 변경 기능] 버튼 UI 구현
+    st.info("👇 [이동] 버튼을 클릭하여 부서 순서를 조정하세요.")
     
-    new_order = st.multiselect(
-        "부서 표시 순서 (왼쪽이 최상단)",
-        options=current_depts,
-        default=current_depts
-    )
+    # 현재 설정을 정렬순서대로 가져옴
+    df_config = st.session_state.dept_config.sort_values('정렬순서').reset_index(drop=True)
     
-    if new_order:
-        config_dict = st.session_state.dept_config.set_index('부서명').to_dict('index')
-        new_data = []
-        for dept in new_order:
-            if dept in config_dict:
-                row = config_dict[dept]
-                row['부서명'] = dept
-                new_data.append(row)
-        st.session_state.dept_config = pd.DataFrame(new_data)
+    # 순서 조정 UI 그리기
+    col_main, col_dummy = st.columns([1, 1]) # 왼쪽 절반만 사용
+    with col_main:
+        for i, row in df_config.iterrows():
+            c1, c2, c3 = st.columns([6, 1, 1])
+            with c1:
+                st.text(f"{i+1}. {row['부서명']}") # 부서명 표시
+            with c2:
+                # 위로 이동 버튼 (첫번째 행 제외)
+                if i > 0:
+                    if st.button("⬆️", key=f"up_{i}"):
+                        # 현재 행과 윗 행의 순서 값을 스왑
+                        curr_idx = df_config.at[i, '정렬순서']
+                        prev_idx = df_config.at[i-1, '정렬순서']
+                        
+                        # 원본 데이터프레임에서 값 교체 (인덱스 매칭 필요 없게 값으로 찾음)
+                        mask_curr = st.session_state.dept_config['정렬순서'] == curr_idx
+                        mask_prev = st.session_state.dept_config['정렬순서'] == prev_idx
+                        
+                        st.session_state.dept_config.loc[mask_curr, '정렬순서'] = 9999 # 임시값
+                        st.session_state.dept_config.loc[mask_prev, '정렬순서'] = curr_idx
+                        st.session_state.dept_config.loc[mask_curr, '정렬순서'] = prev_idx
+                        st.rerun()
+            with c3:
+                # 아래로 이동 버튼 (마지막 행 제외)
+                if i < len(df_config) - 1:
+                    if st.button("⬇️", key=f"down_{i}"):
+                        curr_idx = df_config.at[i, '정렬순서']
+                        next_idx = df_config.at[i+1, '정렬순서']
+                        
+                        mask_curr = st.session_state.dept_config['정렬순서'] == curr_idx
+                        mask_next = st.session_state.dept_config['정렬순서'] == next_idx
+                        
+                        st.session_state.dept_config.loc[mask_curr, '정렬순서'] = 9999
+                        st.session_state.dept_config.loc[mask_next, '정렬순서'] = curr_idx
+                        st.session_state.dept_config.loc[mask_curr, '정렬순서'] = next_idx
+                        st.rerun()
         
+    st.divider()
+    
+    # 정렬된 순서대로 편집기 표시 (내용 수정용)
+    sorted_df = st.session_state.dept_config.sort_values('정렬순서')
+    
     edited_dept_config = st.data_editor(
-        st.session_state.dept_config, 
+        sorted_df,
         num_rows="dynamic", 
         key="dept_editor", 
         use_container_width=True,
+        hide_index=True,
         column_config={
-            "부서명": st.column_config.TextColumn("부서명 (순서 변경은 위 박스 이용)"),
+            "정렬순서": st.column_config.NumberColumn("No", width="small", disabled=True),
+            "부서명": st.column_config.TextColumn("부서명 (순서 변경은 위 화살표 이용)"),
             "특별교육과목1": st.column_config.TextColumn("특별교육 과목 1"),
             "특별교육과목2": st.column_config.TextColumn("특별교육 과목 2 (선택)"),
         }
     )
+    
+    # 편집된 내용(부서명 변경 등) 반영, 단 순서는 건드리지 않음
+    # data_editor가 정렬된 뷰를 반환하므로, 이를 다시 저장
     st.session_state.dept_config = edited_dept_config
     
+    # 매핑 딕셔너리 생성
     DEPT_SUB1_MAP = dict(zip(edited_dept_config['부서명'], edited_dept_config['특별교육과목1']))
     DEPT_SUB2_MAP = dict(zip(edited_dept_config['부서명'], edited_dept_config['특별교육과목2']))
     DEPT_FACTOR_MAP = dict(zip(edited_dept_config['부서명'], edited_dept_config['유해인자']))
@@ -331,15 +378,11 @@ with tab4:
     if special_view.empty:
         st.info("특별교육 대상자가 없습니다.")
     else:
-        # ★ [로직] 신규 입사자일 경우 '특별_공통_8H'를 True로 강제 (갈음 처리)
-        # 뷰 생성 시점에는 강제로 True로 보여주고, 사용자가 체크 시 원본 데이터 업데이트
-        
-        # 1. 신규 입사자라면 특별_공통_8H 값을 True로 덮어씌운 뷰 생성
+        # 로직: 신규 입사자일 경우 '특별_공통_8H'를 True로 강제 (갈음 처리)
         special_view.loc[special_view['법적_신규자'] == True, '특별_공통_8H'] = True
         
         special_view = add_numbering(special_view)
         
-        # 컬럼 순서 지정
         col_order = [
             "No", "성명", "부서", "법적_신규자", "특별_공통_8H", 
             "특별교육_과목1", "특별_1_이론_4H", "특별_1_실습_4H",
@@ -351,13 +394,11 @@ with tab4:
             key="editor_special",
             use_container_width=True,
             hide_index=True,
-            column_order=col_order, # ★ 요청하신 순서 적용
+            column_order=col_order,
             column_config={
                 "No": st.column_config.NumberColumn("No", width="small", disabled=True),
                 "성명": st.column_config.TextColumn("성명", disabled=True),
                 "부서": st.column_config.TextColumn("부서", disabled=True),
-                
-                # 요청하신 명칭 적용
                 "법적_신규자": st.column_config.CheckboxColumn("신규 입사자", disabled=True),
                 "특별_공통_8H": st.column_config.CheckboxColumn("공통8H"),
                 
@@ -377,8 +418,6 @@ with tab4:
         )
         
         if not special_view.equals(edited_special):
-            # 업데이트 시, 공통8H는 신규 입사자가 아닌 경우에만 의미가 있으나,
-            # 사용자가 체크한 그대로 저장 (신규 입사자 자동체크된 것도 저장됨)
             cols_check = ['특별_공통_8H', '특별_1_이론_4H', '특별_1_실습_4H', '특별_2_이론_4H', '특별_2_실습_4H']
             for index, row in edited_special.iterrows():
                 name = row['성명']
@@ -421,7 +460,7 @@ with tab5:
                 "최근_특수검진일": st.column_config.DateColumn("최근 검진일"),
                 "다음_특수검진일": st.column_config.DateColumn("다음 예정일", disabled=True),
                 "현재상태": st.column_config.TextColumn("상태", disabled=True),
-                # ★ 중요: 교육 관련 컬럼 확실하게 숨김
+                # 교육 컬럼 숨김
                 "직책": None, "입사일": None, "퇴사여부": None, "최근_직무교육일": None,
                 "신규교육_이수": None, "특별_공통_8H": None, "특별_1_이론_4H": None, 
                 "특별_1_실습_4H": None, "특별_2_이론_4H": None, "특별_2_실습_4H": None,
