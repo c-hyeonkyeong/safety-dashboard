@@ -45,7 +45,6 @@ SPECIAL_EDU_OPTIONS = [
 
 def sanitize_config_df(df):
     target_cols = ['특별교육과목1', '특별교육과목2']
-    # 없는 컬럼 생성
     for col in target_cols:
         if col not in df.columns:
             df[col] = "해당없음"
@@ -53,7 +52,6 @@ def sanitize_config_df(df):
     for col in target_cols:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
-            # 옵션에 없는 값은 '해당없음'으로 강제 치환
             df[col] = df[col].apply(lambda x: x if x in SPECIAL_EDU_OPTIONS else "해당없음")
             
     if '유해인자' not in df.columns:
@@ -143,7 +141,6 @@ for col in ['정렬순서', '부서명', '특별교육과목1', '특별교육과
 
 with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", expanded=False):
     
-    # --- [추가 기능] 부서 일괄 등록 ---
     with st.popover("📂 부서 설정 일괄 등록 (Excel/CSV)"):
         st.markdown("##### 부서 설정 파일 업로드")
         st.caption("필수 컬럼: **부서명** (나머지는 자동 채움)")
@@ -185,7 +182,6 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
     st.divider()
     st.caption("부서 순서를 변경하고, 각 부서에 해당하는 특별교육 및 유해인자를 설정하세요.")
 
-    # [수정] 정렬순서 안전 변환
     st.session_state.dept_config['정렬순서'] = pd.to_numeric(st.session_state.dept_config['정렬순서'], errors='coerce').fillna(0).astype(int)
     
     df_config = st.session_state.dept_config.sort_values('정렬순서')
@@ -265,7 +261,7 @@ for col in required_columns:
 df = st.session_state.df.copy()
 today = date.today()
 
-# [중요 수정] 날짜 컬럼을 강제로 datetime.date 객체로 변환 (계산 오류 방지)
+# 날짜 컬럼 강제 변환
 date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
 for col in date_cols:
     df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
@@ -275,19 +271,13 @@ df['특별교육_과목1'] = df['부서'].map(DEPT_SUB1_MAP).fillna("설정필�
 df['특별교육_과목2'] = df['부서'].map(DEPT_SUB2_MAP).fillna("해당없음")
 df['유해인자'] = df['부서'].map(DEPT_FACTOR_MAP).fillna("확인필요")
 
-# [수정] 날짜 계산 함수 안전성 강화 (문자열이 들어와도 처리)
 def add_days(d, days):
     try:
         if pd.isna(d) or str(d).strip() == "": return None
-        # 문자열이면 날짜로 변환 시도
-        if isinstance(d, str):
-            d = pd.to_datetime(d).date()
-        # 타임스탬프면 날짜로 변환
-        if isinstance(d, pd.Timestamp):
-            d = d.date()
+        if isinstance(d, str): d = pd.to_datetime(d).date()
+        if isinstance(d, pd.Timestamp): d = d.date()
         return d + timedelta(days=days)
-    except:
-        return None
+    except: return None
 
 df['입사일_dt'] = pd.to_datetime(df['입사일'], errors='coerce')
 df['입사연도'] = df['입사일_dt'].dt.year
@@ -299,6 +289,7 @@ df.loc[mask_manager, '다음_직무교육일'] = df[mask_manager]['최근_직무
 mask_supervisor = df['직책'] == '관리감독자'
 df.loc[mask_supervisor, '다음_직무교육일'] = df[mask_supervisor]['최근_직무교육일'].apply(lambda x: add_days(x, 365))
 mask_waste = df['직책'] == '폐기물담당자'
+# [수정] 폐기물 담당자 계산 로직 점검 완료
 df.loc[mask_waste, '다음_직무교육일'] = df[mask_waste]['최근_직무교육일'].apply(lambda x: add_days(x, 1095))
 
 def calc_next_health(row):
@@ -306,18 +297,14 @@ def calc_next_health(row):
     status = row['검진단계']
     if status == "배치전(미실시)": return None 
     if pd.isna(row['최근_특수검진일']): return None
-    # 여기도 안전하게 변환
+    
     last_check = row['최근_특수검진일']
-    if isinstance(last_check, str):
-        last_check = pd.to_datetime(last_check).date()
-    elif isinstance(last_check, pd.Timestamp):
-        last_check = last_check.date()
+    if isinstance(last_check, str): last_check = pd.to_datetime(last_check).date()
+    elif isinstance(last_check, pd.Timestamp): last_check = last_check.date()
         
     cycle = 180 if status == "1차검진 완료(다음:6개월)" else 365
-    try:
-        return last_check + timedelta(days=cycle)
-    except:
-        return None
+    try: return last_check + timedelta(days=cycle)
+    except: return None
 
 df['다음_특수검진일'] = df.apply(calc_next_health, axis=1)
 dashboard_df = df[df['퇴사여부'] == False]
@@ -330,7 +317,7 @@ with col4: st.metric("🏥 검진 대상", f"{len(dashboard_df[(dashboard_df['�
 
 st.markdown("---")
 
-# --- [5. 데이터 입력 및 저장 (사이드바)] ---
+# --- [5. 데이터 입력 및 저장] ---
 with st.sidebar:
     c1, c2 = st.columns(2)
     with c1:
@@ -344,15 +331,12 @@ with st.sidebar:
             save_all_to_github(st.session_state.df, st.session_state.dept_config)
     st.divider()
 
-    # --- [근로자 명부 일괄 등록] ---
     with st.expander("📂 근로자 명부 일괄 등록", expanded=False):
         uploaded_file = st.file_uploader("파일 업로드 (xlsx/csv)", type=['csv', 'xlsx'])
         if uploaded_file:
             try:
-                if uploaded_file.name.endswith('.csv'):
-                    df_new = pd.read_csv(uploaded_file)
-                else:
-                    df_new = pd.read_excel(uploaded_file)
+                if uploaded_file.name.endswith('.csv'): df_new = pd.read_csv(uploaded_file)
+                else: df_new = pd.read_excel(uploaded_file)
                 
                 st.caption(f"총 {len(df_new)}행 발견. 첫 5줄 미리보기:")
                 st.dataframe(df_new.head(), use_container_width=True, height=150)
@@ -363,12 +347,9 @@ with st.sidebar:
                     else:
                         current_cols = st.session_state.df.columns
                         for col in current_cols:
-                            if col not in df_new.columns:
-                                df_new[col] = None 
-                        
+                            if col not in df_new.columns: df_new[col] = None 
                         df_new = df_new[current_cols]
                         
-                        # [중요] 병합 시 날짜 변환
                         date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
                         for col in date_cols:
                             df_new[col] = pd.to_datetime(df_new[col], errors='coerce').dt.date
@@ -380,9 +361,7 @@ with st.sidebar:
                         st.session_state.df = pd.concat([st.session_state.df, df_new], ignore_index=True)
                         st.success(f"{len(df_new)}명 등록 완료!")
                         st.rerun()
-
-            except Exception as e:
-                st.error(f"파일 읽기 오류: {e}")
+            except Exception as e: st.error(f"파일 읽기 오류: {e}")
 
     st.markdown("### 📝 근로자 명부 수정")
     edited_df = st.data_editor(
@@ -427,6 +406,15 @@ def safe_update_from_editor(subset_view, editor_key, visible_cols):
     if not subset_data_only.equals(edited_data_only):
         st.session_state.df.update(edited_data_only)
 
+# [수정] 상태 뱃지 매핑 정의
+STATUS_BADGE = {
+    "양호": "success",
+    "임박": "warning",
+    "기한초과": "error",
+    "교육필요": "error",
+    "검진필요": "error"
+}
+
 with tab1:
     st.subheader("안전보건관리책임자 / 관리감독자")
     target = dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])].copy()
@@ -438,7 +426,8 @@ with tab1:
             "직책": st.column_config.TextColumn("직책", disabled=True),
             "최근_직무교육일": st.column_config.DateColumn("최근 직무교육일"),
             "다음_직무교육일": st.column_config.DateColumn("다음 예정일", disabled=True),
-            "상태": st.column_config.TextColumn("상태", width="small", disabled=True)
+            # [수정] 상태 아이콘 적용
+            "상태": st.column_config.StatusColumn("상태", width="small", options_dict=STATUS_BADGE)
         }
         safe_update_from_editor(target[['성명', '직책', '최근_직무교육일', '다음_직무교육일', '상태']], "editor_mgr", cols_config)
     else: st.info("대상자가 없습니다.")
@@ -454,7 +443,8 @@ with tab2:
             "부서": st.column_config.TextColumn("부서", disabled=True),
             "최근_직무교육일": st.column_config.DateColumn("최근 직무교육일"),
             "다음_직무교육일": st.column_config.DateColumn("다음 예정일", disabled=True),
-            "상태": st.column_config.TextColumn("상태", width="small", disabled=True)
+            # [수정] 상태 아이콘 적용
+            "상태": st.column_config.StatusColumn("상태", width="small", options_dict=STATUS_BADGE)
         }
         safe_update_from_editor(target[['성명', '부서', '최근_직무교육일', '다음_직무교육일', '상태']], "editor_waste", cols_config)
     else: st.info("대상자가 없습니다.")
@@ -510,7 +500,8 @@ with tab5:
             "검진단계": st.column_config.SelectboxColumn("검진단계", options=HEALTH_PHASES, required=True),
             "최근_특수검진일": st.column_config.DateColumn("최근 검진일"),
             "다음_특수검진일": st.column_config.DateColumn("다음 예정일", disabled=True),
-            "상태": st.column_config.TextColumn("상태", width="small", disabled=True)
+            # [수정] 상태 아이콘 적용
+            "상태": st.column_config.StatusColumn("상태", width="small", options_dict=STATUS_BADGE)
         }
         safe_update_from_editor(target[["성명", "부서", "유해인자", "검진단계", "최근_특수검진일", "다음_특수검진일", "상태"]], "editor_health", cols_config)
     else: st.info("대상자가 없습니다.")
