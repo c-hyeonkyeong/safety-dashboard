@@ -6,7 +6,7 @@
 강승화,일반근로자,수처리사업부,2025-12-01,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 강호길,일반근로자,품질보증팀,2010-06-07,,False,False,정기검진(다음:1년),2025-11-07,True,False,False,False,False,False,False,False,False,False,False
 구예진,일반근로자,재무팀,2023-02-01,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
-구홍규,관리감독자,재무팀,2014-07-07,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
+구홍규,관리감독자,재무팀,2014-07-07,2025-11-03,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 권진수,일반근로자,수처리사업부,2025-07-01,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 김경미,일반근로자,재무팀,2021-01-25,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 김근영,일반근로자,출하Part,2024-11-18,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
@@ -24,7 +24,7 @@
 김순형,일반근로자,배전기술팀,2021-03-02,,False,False,정기검진(다음:1년),2025-11-07,True,False,False,False,False,False,False,False,False,False,False
 김영숙,일반근로자,품질생산,2007-05-28,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 김용태,일반근로자,수처리사업부,2023-02-13,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
-김원중,안전보건관리책임자,공장,2023-09-11,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
+김원중,안전보건관리책임자,공장,2023-09-11,2025-11-07,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 김유림,일반근로자,구매팀,2021-02-01,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 김유빈,일반근로자,제어기기영업팀,2023-10-23,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 김윤석,일반근로자,SMT생산팀,2015-10-01,,False,False,정기검진(다음:1년),2025-02-14,True,False,False,False,False,False,False,False,False,False,False
@@ -92,17 +92,17 @@
 이영호,일반근로자,HMI Group,2025-09-26,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 이재원,일반근로자,기술영업 1팀,2025-03-04,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 이재진,일반근로자,SCADA Group,2024-02-21,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
-이재환,관리감독자,프로젝트사업팀,2013-01-18,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
+이재환,관리감독자,프로젝트사업팀,2013-01-18,2025-11-03,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 이정은,일반근로자,해외사업담당,2017-10-10,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 임남식,일반근로자,PC생산,2011-01-01,,False,False,1차검진 완료(다음:6개월),2025-08-22,True,False,False,False,False,False,False,False,False,False,False
 임노송,일반근로자,수처리사업부,2020-12-16,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 임동환,일반근로자,수처리사업부,2023-05-02,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
-임승현,관리감독자,배전사업실,2014-03-04,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
+임승현,관리감독자,배전사업실,2014-03-04,2025-11-03,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 임찬영,일반근로자,배전개발팀,2010-03-11,,False,False,정기검진(다음:1년),2025-11-10,True,False,False,False,False,False,False,False,False,False,False
 임철수,일반근로자,수처리사업부,2023-06-01,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 장국식,일반근로자,환경실,2004-10-01,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 장윤석,일반근로자,전략경영기획실,2008-01-28,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
-장재석,관리감독자,기술연구소,2010-11-15,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
+장재석,관리감독자,기술연구소,2010-11-15,2025-11-03,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 장재용,일반근로자,프로젝트사업실,2007-01-02,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 전도현,일반근로자,SCADA Group,2016-05-18,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 전상준,일반근로자,Platform Group,2024-02-26,,False,False,배치전(미실시),,False,False,False,False,False,False,False,False,False,False,False
@@ -124,8 +124,8 @@
 최은미,일반근로자,PC생산,2024-07-01,,False,False,1차검진 완료(다음:6개월),2025-08-21,True,False,False,False,False,False,False,False,False,False,False
 최재혁,일반근로자,HMI Group,2024-09-26,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 최정은,일반근로자,PLC생산,2023-08-16,,False,False,1차검진 완료(다음:6개월),2025-08-22,True,False,False,False,False,False,False,False,False,False,False
-하헌재,관리감독자,생산팀,2013-07-25,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
-하헌재,폐기물담당자,생산팀,2013-07-25,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
+하헌재,관리감독자,생산팀,2013-07-25,2025-11-03,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
+하헌재,폐기물담당자,생산팀,2013-07-25,2025-12-03,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 한상남,일반근로자,PLC생산,2025-06-09,,False,False,1차검진 완료(다음:6개월),2025-08-22,True,False,False,False,False,False,False,False,False,False,False
 한진희,일반근로자,기술영업 3팀,2018-07-23,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
 허규,일반근로자,SCADA Group,2024-04-08,,False,False,배치전(미실시),,True,False,False,False,False,False,False,False,False,False,False
