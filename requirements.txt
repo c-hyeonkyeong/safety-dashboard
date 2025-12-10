@@ -2,3 +2,4 @@ streamlit
 pandas
 openpyxl
 PyGithub
+python -m pip install streamlit-sortables
