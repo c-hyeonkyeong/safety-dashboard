@@ -7,7 +7,7 @@ import io
 # --- [1. 시스템 설정] ---
 st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️")
 
-# CSS: 스타일 정의
+# CSS: 사이드바 폭 조정 및 스타일
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
@@ -109,7 +109,6 @@ with st.sidebar:
             csv_string = contents.decoded_content.decode("utf-8")
             loaded_data = pd.read_csv(io.StringIO(csv_string))
             
-            # 불러올 때 날짜 변환 (중요)
             date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
             for col in date_cols:
                 if col in loaded_data.columns:
@@ -217,7 +216,7 @@ with st.sidebar:
         }
         st.session_state.df_final = pd.DataFrame(data)
 
-    # [중요] 날짜 타입 강제 변환 및 체크박스 보장
+    # [중요] 날짜 타입 강제 변환
     date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
     for col in date_cols:
         if col in st.session_state.df_final.columns:
@@ -278,7 +277,6 @@ with st.sidebar:
 df = st.session_state.df_final.copy()
 today = date.today()
 
-# [중요] 계산 전 날짜 컬럼을 무조건 date 객체로 변환 (오류 방지)
 for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
     if col in df.columns: 
         df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
@@ -290,11 +288,9 @@ df['유해인자'] = df['부서'].map(DEPT_FAC).fillna("없음")
 mask_no_factor = df['유해인자'].isin(['없음', '', '해당없음'])
 df.loc[mask_no_factor, '특수검진_대상'] = False
 
-# [강력해진 날짜 계산 함수]
 def add_days(d, days):
     try: 
         if pd.isna(d) or str(d) == "NaT" or str(d).strip() == "": return None
-        # 혹시 모를 문자열이나 datetime을 date로 확실히 변환
         if isinstance(d, str): d = pd.to_datetime(d).date()
         if isinstance(d, datetime): d = d.date()
         return d + timedelta(days=days)
@@ -304,14 +300,19 @@ df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce'
 df['입사연도'] = df['입사일_dt'].dt.year
 df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
 
-# [확실한 직무교육일 자동 계산]
+# [수정] 직무교육일 계산 로직 강화 (포괄적 단어 검색)
 df['다음_직무교육일'] = None
-df['직책_clean'] = df['직책'].astype(str).str.strip() # 공백 제거
+# 공백 제거 및 문자열 변환
+df['직책_str'] = df['직책'].astype(str).str.replace(" ", "") 
 
-# 계산 적용 (apply 함수가 안전한 add_days를 호출함)
-df.loc[df['직책_clean']=='안전보건관리책임자', '다음_직무교육일'] = df['최근_직무교육일'].apply(lambda x: add_days(x, 730))
-df.loc[df['직책_clean']=='관리감독자', '다음_직무교육일'] = df['최근_직무교육일'].apply(lambda x: add_days(x, 365))
-df.loc[df['직책_clean']=='폐기물담당자', '다음_직무교육일'] = df['최근_직무교육일'].apply(lambda x: add_days(x, 1095))
+# contains 함수로 유연하게 검색
+mask_manager = df['직책_str'].str.contains("책임자", na=False)
+mask_supervisor = df['직책_str'].str.contains("감독자", na=False)
+mask_waste = df['직책_str'].str.contains("폐기물", na=False)
+
+df.loc[mask_manager, '다음_직무교육일'] = df[mask_manager]['최근_직무교육일'].apply(lambda x: add_days(x, 730))
+df.loc[mask_supervisor, '다음_직무교육일'] = df[mask_supervisor]['최근_직무교육일'].apply(lambda x: add_days(x, 365))
+df.loc[mask_waste, '다음_직무교육일'] = df[mask_waste]['최근_직무교육일'].apply(lambda x: add_days(x, 1095))
 
 def calc_next_health(row):
     if not row.get('특수검진_대상', True): return None 
@@ -343,7 +344,7 @@ def safe_update_simple(target_df, key, cols):
 
 with tab1:
     st.subheader("안전보건관리책임자 (2년) / 관리감독자 (1년)")
-    target = dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])].copy()
+    target = dashboard_df[mask_manager | mask_supervisor].copy()
     if not target.empty:
         target['상태'] = target.apply(lambda r: "🔴 초과" if pd.isna(r['다음_직무교육일']) or (r['다음_직무교육일']-today).days<0 else "🟢 양호", axis=1)
         safe_update_simple(target[['성명','직책','최근_직무교육일','다음_직무교육일','상태']], "t1", {"최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), "다음_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD")})
@@ -351,7 +352,7 @@ with tab1:
 
 with tab2:
     st.subheader("폐기물 담당자 (3년)")
-    target = dashboard_df[dashboard_df['직책'].astype(str).str.strip() == '폐기물담당자'].copy()
+    target = dashboard_df[mask_waste].copy()
     if not target.empty:
         target['상태'] = target.apply(lambda r: "🔴 필요" if pd.isna(r['최근_직무교육일']) else ("🔴 초과" if (r['다음_직무교육일']-today).days<0 else "🟢 양호"), axis=1)
         safe_update_simple(target[['성명','부서','최근_직무교육일','다음_직무교육일','상태']], "t2", {"최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), "다음_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD")})
