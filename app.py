@@ -7,7 +7,7 @@ import io
 # --- [1. 시스템 설정] ---
 st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️")
 
-# CSS: 사이드바 폭 조정 및 스타일
+# CSS: 스타일 정의
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
@@ -76,8 +76,8 @@ with st.sidebar:
             st.error("토큰 필요")
             return
         try:
-            # 날짜 객체 -> 문자열 변환 후 저장
             save_df = data_df.copy()
+            # 저장 전 날짜를 문자열로 변환 (오류 방지)
             date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
             for col in date_cols:
                 if col in save_df.columns:
@@ -109,6 +109,7 @@ with st.sidebar:
             csv_string = contents.decoded_content.decode("utf-8")
             loaded_data = pd.read_csv(io.StringIO(csv_string))
             
+            # 불러올 때 날짜 변환 (중요)
             date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
             for col in date_cols:
                 if col in loaded_data.columns:
@@ -132,7 +133,7 @@ with st.sidebar:
             ld, lc = load_all_from_github()
             if ld is not None: 
                 st.session_state.df_final = ld
-                st.toast("데이터 로드 완료!", icon="✅")
+                st.toast("로드 완료!", icon="✅")
             if lc is not None: st.session_state.dept_config_final = lc
             st.rerun()
             
@@ -146,9 +147,7 @@ with st.sidebar:
 
     st.divider()
 
-    # --------------------------------------------------------
     # 1. 관리자 설정 (부서 매핑)
-    # --------------------------------------------------------
     if 'dept_config_final' not in st.session_state:
         st.session_state.dept_config_final = pd.DataFrame({
             '정렬순서': [1, 2, 3, 4],
@@ -198,11 +197,7 @@ with st.sidebar:
 
     st.divider()
 
-    # --------------------------------------------------------
     # 2. 명부 관리
-    # --------------------------------------------------------
-    
-    # 데이터 초기화
     if 'df_final' not in st.session_state:
         data = {
             '성명': ['김철수', '이영희', '박신규', '최신규', '정전기', '강폐기'],
@@ -211,7 +206,6 @@ with st.sidebar:
             '입사일': [date(2022, 1, 1), date(2023, 5, 20), date.today(), date(2020, 1, 1), date(2023, 6, 1), date(2020, 1, 1)],
             '최근_직무교육일': [date(2023, 5, 1), date(2024, 5, 20), None, None, None, date(2022, 5, 1)],
             '신규교육_이수': [False, False, False, False, False, False],
-            # [수정] 요청하신 컬럼명으로 변경
             '공통8H': [False] * 6,
             '과목1_온라인4H': [False] * 6,
             '과목1_감독자4H': [False] * 6,
@@ -223,27 +217,21 @@ with st.sidebar:
         }
         st.session_state.df_final = pd.DataFrame(data)
 
-    # 데이터 타입 강제 변환
+    # [중요] 날짜 타입 강제 변환 및 체크박스 보장
     date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
     for col in date_cols:
         if col in st.session_state.df_final.columns:
             st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce').dt.date
 
-    # 체크박스용 컬럼 보장 (새로운 이름 적용)
-    bool_cols = [
-        '퇴사여부', '특수검진_대상', '신규교육_이수', 
-        '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H'
-    ]
+    bool_cols = ['퇴사여부', '특수검진_대상', '신규교육_이수', '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H']
     for col in bool_cols:
         if col not in st.session_state.df_final.columns:
-            # 특수검진_대상은 기본 True, 나머지는 False
             default_val = True if col == '특수검진_대상' else False
             st.session_state.df_final[col] = default_val
         else:
             st.session_state.df_final[col] = st.session_state.df_final[col].fillna(False).astype(bool)
 
     with st.expander("📝 근로자 명부 관리 (파일/수정)", expanded=True):
-        
         with st.popover("📂 명부 파일 등록 (Excel/CSV)"):
             up_file = st.file_uploader("파일 선택", type=['csv', 'xlsx'], key="worker_up")
             if up_file:
@@ -262,7 +250,6 @@ with st.sidebar:
                 except Exception as e: st.error(str(e))
 
         st.caption("특수검진 제외는 여기서 체크 해제")
-        
         edited_df = st.data_editor(
             st.session_state.df_final,
             num_rows="dynamic",
@@ -291,6 +278,7 @@ with st.sidebar:
 df = st.session_state.df_final.copy()
 today = date.today()
 
+# [중요] 계산 전 날짜 컬럼을 무조건 date 객체로 변환 (오류 방지)
 for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
     if col in df.columns: 
         df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
@@ -302,9 +290,13 @@ df['유해인자'] = df['부서'].map(DEPT_FAC).fillna("없음")
 mask_no_factor = df['유해인자'].isin(['없음', '', '해당없음'])
 df.loc[mask_no_factor, '특수검진_대상'] = False
 
+# [강력해진 날짜 계산 함수]
 def add_days(d, days):
     try: 
-        if pd.isna(d): return None
+        if pd.isna(d) or str(d) == "NaT" or str(d).strip() == "": return None
+        # 혹시 모를 문자열이나 datetime을 date로 확실히 변환
+        if isinstance(d, str): d = pd.to_datetime(d).date()
+        if isinstance(d, datetime): d = d.date()
         return d + timedelta(days=days)
     except: return None
 
@@ -312,10 +304,11 @@ df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce'
 df['입사연도'] = df['입사일_dt'].dt.year
 df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
 
-# 직무교육일 자동 계산
+# [확실한 직무교육일 자동 계산]
 df['다음_직무교육일'] = None
-df['직책_clean'] = df['직책'].astype(str).str.strip()
+df['직책_clean'] = df['직책'].astype(str).str.strip() # 공백 제거
 
+# 계산 적용 (apply 함수가 안전한 add_days를 호출함)
 df.loc[df['직책_clean']=='안전보건관리책임자', '다음_직무교육일'] = df['최근_직무교육일'].apply(lambda x: add_days(x, 730))
 df.loc[df['직책_clean']=='관리감독자', '다음_직무교육일'] = df['최근_직무교육일'].apply(lambda x: add_days(x, 365))
 df.loc[df['직책_clean']=='폐기물담당자', '다음_직무교육일'] = df['최근_직무교육일'].apply(lambda x: add_days(x, 1095))
@@ -389,7 +382,6 @@ with tab3:
             st.rerun()
     else: st.info("대상자 없음")
 
-# [수정] 특별교육 컬럼명 변경 적용 (요청사항 반영)
 with tab4:
     st.subheader("특별안전보건교육 이수 관리")
     
@@ -397,7 +389,6 @@ with tab4:
     target = dashboard_df.loc[target_indices].copy()
     
     if not target.empty:
-        # 변경된 컬럼명을 반영하여 보여줄 리스트 생성
         cols_to_show = ['성명','부서','특별교육_과목1','공통8H','과목1_온라인4H','과목1_감독자4H','특별교육_과목2','과목2_온라인4H','과목2_감독자4H']
         
         edited_target = st.data_editor(
