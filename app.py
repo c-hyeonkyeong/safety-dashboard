@@ -7,7 +7,7 @@ import io
 # --- [1. 시스템 설정] ---
 st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️")
 
-# CSS: 스타일 정의
+# CSS: 사이드바 폭 조정 및 스타일
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
@@ -42,43 +42,50 @@ def sanitize_config_df(df):
     else: df['유해인자'] = df['유해인자'].fillna("없음")
     return df
 
-# [핵심 1] 직무교육 날짜 계산 함수
+# [핵심] 직무교육 계산 함수 (Timestamp 기반 안전 계산)
 def calculate_job_training_date(row):
     last_date = row.get('최근_직무교육일')
-    if pd.isna(last_date) or str(last_date) == 'NaT': return None
     
-    # 타입 안전 변환
-    if isinstance(last_date, str):
-        try: last_date = pd.to_datetime(last_date).date()
-        except: return None
-    elif isinstance(last_date, pd.Timestamp):
-        last_date = last_date.date()
-        
+    # 빈 값 체크
+    if pd.isna(last_date) or str(last_date) == 'NaT' or str(last_date).strip() == "":
+        return None
+    
+    # Timestamp 객체로 확실히 변환
+    if not isinstance(last_date, pd.Timestamp):
+        try:
+            last_date = pd.to_datetime(last_date)
+        except:
+            return None
+            
     role = str(row.get('직책', '')).replace(" ", "").strip()
+    
     try:
-        if '책임자' in role: return last_date + timedelta(days=730)
-        elif '폐기물' in role: return last_date + timedelta(days=1095)
-        elif '감독자' in role: return last_date + timedelta(days=365)
-        else: return None
-    except: return None
+        if '책임자' in role: 
+            return last_date + timedelta(days=730)
+        elif '폐기물' in role:
+            return last_date + timedelta(days=1095)
+        elif '감독자' in role:
+            return last_date + timedelta(days=365)
+        else:
+            return None
+    except:
+        return None
 
-# [핵심 2] 상태(D-Day) 표시 안전 함수 (에러 방지용)
+# [핵심 2] D-Day 상태 표시 안전 함수
 def get_dday_status(target_date):
     if pd.isna(target_date) or str(target_date) == 'NaT' or str(target_date).strip() == "":
         return "-"
     
     try:
-        # 무조건 datetime 객체로 변환하여 비교
         target_ts = pd.to_datetime(target_date)
         today_ts = pd.Timestamp(date.today())
-        
         diff = (target_ts - today_ts).days
         
         if diff < 0: return "🔴 초과"
         elif diff < 30: return "🟡 임박"
         else: return "🟢 양호"
     except:
-        return "❓ 오류"
+        return "-"
 
 # ==========================================
 # [사이드바] 통합 메뉴
@@ -114,10 +121,11 @@ with st.sidebar:
             return
         try:
             save_df = data_df.copy()
-            date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
+            # 저장 시 날짜를 문자열로 변환 (충돌 방지)
+            date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일', '다음_직무교육일', '다음_특수검진일']
             for col in date_cols:
                 if col in save_df.columns:
-                    save_df[col] = save_df[col].astype(str).replace('NaT', '')
+                    save_df[col] = save_df[col].apply(lambda x: x.strftime('%Y-%m-%d') if not pd.isna(x) else '')
 
             data_content = save_df.to_csv(index=False)
             try:
@@ -145,10 +153,11 @@ with st.sidebar:
             csv_string = contents.decoded_content.decode("utf-8")
             loaded_data = pd.read_csv(io.StringIO(csv_string))
             
+            # [수정] 불러올 때 datetime64로 변환 (.dt.date 삭제)
             date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
             for col in date_cols:
                 if col in loaded_data.columns:
-                    loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce').dt.date
+                    loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce')
             
             if '검진단계' not in loaded_data.columns: loaded_data['검진단계'] = "배치전(미실시)"
             else: loaded_data['검진단계'] = loaded_data['검진단계'].fillna("배치전(미실시)")
@@ -252,11 +261,11 @@ with st.sidebar:
         }
         st.session_state.df_final = pd.DataFrame(data)
 
-    # 날짜 강제 변환
+    # [수정] 날짜 변환 시 .dt.date 사용 안 함 (TypeError 해결)
     date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
     for col in date_cols:
         if col in st.session_state.df_final.columns:
-            st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce').dt.date
+            st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce')
 
     bool_cols = ['퇴사여부', '특수검진_대상', '신규교육_이수', '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H']
     for col in bool_cols:
@@ -313,9 +322,10 @@ with st.sidebar:
 df = st.session_state.df_final.copy()
 today = date.today()
 
+# 날짜 보장
 for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
     if col in df.columns: 
-        df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
+        df[col] = pd.to_datetime(df[col], errors='coerce')
 
 df['특별교육_과목1'] = df['부서'].map(DEPT_S1).fillna("설정필요")
 df['특별교육_과목2'] = df['부서'].map(DEPT_S2).fillna("해당없음")
@@ -326,9 +336,7 @@ df.loc[mask_no_factor, '특수검진_대상'] = False
 
 def add_days(d, days):
     try: 
-        if pd.isna(d) or str(d) == "NaT" or str(d).strip() == "": return None
-        if isinstance(d, str): d = pd.to_datetime(d).date()
-        if isinstance(d, datetime): d = d.date()
+        if pd.isna(d): return None
         return d + timedelta(days=days)
     except: return None
 
@@ -360,7 +368,7 @@ st.divider()
 # 3. 탭 구성
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 입사자", "⚠️ 특별교육", "🏥 특수건강검진"])
 
-# [탭 1] 책임자/감독자
+# [탭 1] 책임자/감독자 (직무교육일 저장 기능 추가)
 with tab1:
     st.subheader("안전보건관리책임자 (2년) / 관리감독자 (1년)")
     mask_mgr = dashboard_df['직책'].astype(str).str.replace(" ", "").str.contains("책임자|감독자", na=False)
@@ -388,7 +396,7 @@ with tab1:
             st.rerun()
     else: st.info("대상자 없음")
 
-# [탭 2] 폐기물 담당자
+# [탭 2] 폐기물 담당자 (직무교육일 저장 기능 추가)
 with tab2:
     st.subheader("폐기물 담당자 (3년)")
     mask_waste = dashboard_df['직책'].astype(str).str.replace(" ", "").str.contains("폐기물", na=False)
@@ -481,7 +489,7 @@ with tab5:
     target = dashboard_df.loc[target_indices].copy()
     
     if not target.empty:
-        # [수정] 안전 함수 사용
+        # [수정] apply 함수 내부에서 날짜 연산을 안전하게 처리
         target['상태'] = target.apply(lambda r: "🔴 검진필요" if r['검진단계']=="배치전(미실시)" else get_dday_status(r['다음_특수검진일']), axis=1)
         
         edited_target = st.data_editor(
