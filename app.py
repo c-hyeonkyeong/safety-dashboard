@@ -126,8 +126,13 @@ for col in ['정렬순서', '부서명', '특별교육과목1', '특별교육과
         else:
             st.session_state.dept_config[col] = '해당없음'
 
+# 드롭다운 옵션 정의
 SPECIAL_EDU_OPTIONS = [
     "해당없음",
+    "아크용접 등 화기작업", 
+    "고압 전기 취급 작업", 
+    "밀폐공간 내부 작업", 
+    "그라인더 작업",
     "4. 폭발성·물반응성·자기반응성·자기발열성 물질, 자연발화성 액체·고체 및 인화성 액체의 제조 또는 취급작업",
     "35. 허가 및 관리 대상 유해물질의 제조 또는 취급작업"
 ]
@@ -171,6 +176,10 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
 
     st.markdown("#### 📝 매핑 상세 설정")
     sorted_df = st.session_state.dept_config.sort_values('정렬순서')
+    
+    # [핵심 수정] SelectboxColumn 사용 시 에러 방지를 위해 문자열 타입으로 강제 변환
+    sorted_df['특별교육과목1'] = sorted_df['특별교육과목1'].astype(str)
+    sorted_df['특별교육과목2'] = sorted_df['특별교육과목2'].astype(str)
     
     edited_dept_config = st.data_editor(
         sorted_df,
@@ -302,7 +311,7 @@ with st.sidebar:
             
     st.divider()
 
-    # --- [추가된 기능] 일괄 업로드 기능 ---
+    # --- [일괄 업로드 기능] ---
     with st.expander("📂 근로자 명부 일괄 등록 (Excel/CSV)", expanded=False):
         uploaded_file = st.file_uploader("파일 업로드", type=['csv', 'xlsx'])
         if uploaded_file is not None:
@@ -318,10 +327,8 @@ with st.sidebar:
                 else:
                     st.write(f"총 {len(df_new)}명 로드됨")
                     if st.button("데이터 병합하기", use_container_width=True):
-                        # 기존 컬럼 구조에 맞추기 (없는 컬럼은 기본값 채움)
                         for col in st.session_state.df.columns:
                             if col not in df_new.columns:
-                                # 날짜 컬럼은 None, 나머지는 False나 빈 문자열 등 기본값
                                 if "일" in col or "날짜" in col:
                                     df_new[col] = None
                                 elif "이수" in col or "여부" in col or "8H" in col or "4H" in col:
@@ -329,13 +336,11 @@ with st.sidebar:
                                 else:
                                     df_new[col] = None
                         
-                        # 날짜 변환 (엑셀 datetime -> date)
                         date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
                         for col in date_cols:
                             if col in df_new.columns:
                                 df_new[col] = pd.to_datetime(df_new[col], errors='coerce').dt.date
 
-                        # 필요한 컬럼만 선택해서 병합
                         df_new = df_new[st.session_state.df.columns]
                         st.session_state.df = pd.concat([st.session_state.df, df_new], ignore_index=True)
                         st.success("성공적으로 추가되었습니다!")
