@@ -70,7 +70,14 @@ with st.sidebar:
             st.error("토큰 확인 필요")
             return
         try:
-            data_content = data_df.to_csv(index=False)
+            # 날짜 객체를 문자열로 변환하여 저장 (충돌 방지)
+            save_df = data_df.copy()
+            date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
+            for col in date_cols:
+                if col in save_df.columns:
+                    save_df[col] = save_df[col].astype(str).replace('NaT', '')
+
+            data_content = save_df.to_csv(index=False)
             try:
                 contents = repo.get_contents(DATA_FILE)
                 repo.update_file(DATA_FILE, f"Update data: {datetime.now()}", data_content, contents.sha)
@@ -83,7 +90,7 @@ with st.sidebar:
                 repo.update_file(CONFIG_FILE, f"Update config: {datetime.now()}", config_content, contents.sha)
             except:
                 repo.create_file(CONFIG_FILE, "Init config", config_content)
-            st.toast("✅ 저장 완료!", icon="☁️")
+            st.toast("✅ 저장 완료! (검진일/단계 포함)", icon="☁️")
         except Exception as e:
             st.error(f"저장 실패: {e}")
 
@@ -95,9 +102,20 @@ with st.sidebar:
             contents = repo.get_contents(DATA_FILE)
             csv_string = contents.decoded_content.decode("utf-8")
             loaded_data = pd.read_csv(io.StringIO(csv_string))
-            for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
+            
+            # [핵심] 불러온 데이터의 날짜 컬럼을 확실하게 date 객체로 변환
+            # 이 부분이 없으면 불러온 뒤 에디터에서 날짜가 안 보이거나 깨짐
+            date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
+            for col in date_cols:
                 if col in loaded_data.columns:
                     loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce').dt.date
+            
+            # 검진단계 컬럼이 없으면 기본값으로 생성
+            if '검진단계' not in loaded_data.columns:
+                loaded_data['검진단계'] = "배치전(미실시)"
+            else:
+                loaded_data['검진단계'] = loaded_data['검진단계'].fillna("배치전(미실시)")
+
         except: pass
         try:
             contents = repo.get_contents(CONFIG_FILE)
@@ -166,14 +184,17 @@ with st.sidebar:
     with c1:
         if st.button("📂 불러오기"):
             ld, lc = load_all_from_github()
-            if ld is not None: st.session_state.df_final = ld
+            # [중요] 불러온 데이터가 있으면 세션에 확실히 반영
+            if ld is not None: 
+                st.session_state.df_final = ld
+                st.toast("데이터 불러오기 성공!", icon="✅")
             if lc is not None: st.session_state.dept_config_final = lc
             st.rerun()
     with c2:
         if st.button("💾 저장하기", type="primary"):
             save_all_to_github(st.session_state.df_final, st.session_state.dept_config_final)
 
-    # 데이터 초기화
+    # 데이터 초기화 (처음 실행 시)
     if 'df_final' not in st.session_state:
         data = {
             '성명': ['김철수', '이영희', '박신규', '최신규', '정전기', '강폐기'],
@@ -243,9 +264,10 @@ with st.sidebar:
             "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
             "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
             "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-            "검진단계": None
+            "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES)
         }
     )
+    # 사이드바 에디터에서 수정된 내용 즉시 반영
     if not st.session_state.df_final.equals(edited_df):
         st.session_state.df_final = edited_df
 
@@ -265,8 +287,7 @@ df['특별교육_과목1'] = df['부서'].map(DEPT_S1).fillna("설정필요")
 df['특별교육_과목2'] = df['부서'].map(DEPT_S2).fillna("해당없음")
 df['유해인자'] = df['부서'].map(DEPT_FAC).fillna("없음")
 
-# [요청사항 반영] 유해인자가 '없음'이면 특수검진 대상 강제 해제 (False)
-# 이 로직을 통해 리스트에서 자동으로 사라지게 됨
+# [요청 반영] 유해인자가 '없음'이면 특수검진 대상 강제 해제
 mask_no_factor = df['유해인자'].isin(['없음', '', '해당없음'])
 df.loc[mask_no_factor, '특수검진_대상'] = False
 
@@ -342,7 +363,7 @@ with tab4:
 with tab5:
     st.subheader("특수건강검진 현황")
     
-    # 여기서 유해인자가 '없음'인 사람은 자동으로 제외됨 (위의 로직에 의해)
+    # 1. 특수검진 대상 체크 & 유해인자 있는 사람만
     target_indices = dashboard_df[dashboard_df['특수검진_대상'] == True].index
     target = dashboard_df.loc[target_indices].copy()
     
@@ -364,6 +385,7 @@ with tab5:
         edited_target.index = target.index
         compare_cols = ['검진단계', '최근_특수검진일']
         
+        # 2. 수정 발생 시 세션에 저장 (자동 반영)
         if not target[compare_cols].equals(edited_target[compare_cols]):
             st.session_state.df_final.loc[target_indices, compare_cols] = edited_target[compare_cols]
     else: 
