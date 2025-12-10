@@ -48,7 +48,6 @@ def sanitize_config_df(df):
 with st.sidebar:
     st.header("⚙️ 통합 관리자 메뉴")
     
-    # [버튼 위치 통합]
     st.caption("데이터 서버 연결 및 제어")
     col_btn1, col_btn2, col_btn3 = st.columns(3)
     
@@ -200,7 +199,7 @@ with st.sidebar:
     st.divider()
 
     # --------------------------------------------------------
-    # 2. 명부 관리 (Expander 적용)
+    # 2. 명부 관리
     # --------------------------------------------------------
     
     # 데이터 초기화
@@ -212,7 +211,12 @@ with st.sidebar:
             '입사일': [date(2022, 1, 1), date(2023, 5, 20), date.today(), date(2020, 1, 1), date(2023, 6, 1), date(2020, 1, 1)],
             '최근_직무교육일': [date(2023, 5, 1), date(2024, 5, 20), None, None, None, date(2022, 5, 1)],
             '신규교육_이수': [False, False, False, False, False, False],
-            '특별_공통_8H': [False, False, False, False, True, False],
+            # [수정] 요청하신 컬럼명으로 변경
+            '공통8H': [False] * 6,
+            '과목1_온라인4H': [False] * 6,
+            '과목1_감독자4H': [False] * 6,
+            '과목2_온라인4H': [False] * 6,
+            '과목2_감독자4H': [False] * 6,
             '검진단계': ['배치전(미실시)', '배치전(미실시)', '배치전(미실시)', '배치전(미실시)', '1차검진 완료(다음:6개월)', '배치전(미실시)'], 
             '최근_특수검진일': [None, None, None, None, date(2024, 12, 1), None],
             '특수검진_대상': [True, True, True, True, True, False] 
@@ -225,17 +229,21 @@ with st.sidebar:
         if col in st.session_state.df_final.columns:
             st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce').dt.date
 
-    bool_cols = ['퇴사여부', '특수검진_대상', '신규교육_이수', '특별_공통_8H', '특별_1_이론_4H', '특별_1_실습_4H', '특별_2_이론_4H', '특별_2_실습_4H']
+    # 체크박스용 컬럼 보장 (새로운 이름 적용)
+    bool_cols = [
+        '퇴사여부', '특수검진_대상', '신규교육_이수', 
+        '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H'
+    ]
     for col in bool_cols:
         if col not in st.session_state.df_final.columns:
-            st.session_state.df_final[col] = True if col == '특수검진_대상' else False
+            # 특수검진_대상은 기본 True, 나머지는 False
+            default_val = True if col == '특수검진_대상' else False
+            st.session_state.df_final[col] = default_val
         else:
             st.session_state.df_final[col] = st.session_state.df_final[col].fillna(False).astype(bool)
 
-    # [수정] 근로자 명부 관리 전체를 Expander로 감쌈 (기본: 펼침)
-    with st.expander("📝 근로자 명부 관리", expanded=True):
+    with st.expander("📝 근로자 명부 관리 (파일/수정)", expanded=True):
         
-        # 파일 등록 영역
         with st.popover("📂 명부 파일 등록 (Excel/CSV)"):
             up_file = st.file_uploader("파일 선택", type=['csv', 'xlsx'], key="worker_up")
             if up_file:
@@ -381,6 +389,7 @@ with tab3:
             st.rerun()
     else: st.info("대상자 없음")
 
+# [수정] 특별교육 컬럼명 변경 적용 (요청사항 반영)
 with tab4:
     st.subheader("특별안전보건교육 이수 관리")
     
@@ -388,7 +397,8 @@ with tab4:
     target = dashboard_df.loc[target_indices].copy()
     
     if not target.empty:
-        cols_to_show = ['성명','부서','특별교육_과목1','특별_공통_8H','특별_1_이론_4H','특별_1_실습_4H','특별교육_과목2','특별_2_이론_4H','특별_2_실습_4H']
+        # 변경된 컬럼명을 반영하여 보여줄 리스트 생성
+        cols_to_show = ['성명','부서','특별교육_과목1','공통8H','과목1_온라인4H','과목1_감독자4H','특별교육_과목2','과목2_온라인4H','과목2_감독자4H']
         
         edited_target = st.data_editor(
             target[cols_to_show],
@@ -399,15 +409,15 @@ with tab4:
                 "부서": st.column_config.TextColumn(disabled=True),
                 "특별교육_과목1": st.column_config.TextColumn(disabled=True),
                 "특별교육_과목2": st.column_config.TextColumn(disabled=True),
-                "특별_공통_8H": st.column_config.CheckboxColumn("공통 8H", width="small"),
-                "특별_1_이론_4H": st.column_config.CheckboxColumn("1-이론", width="small"),
-                "특별_1_실습_4H": st.column_config.CheckboxColumn("1-실습", width="small"),
-                "특별_2_이론_4H": st.column_config.CheckboxColumn("2-이론", width="small"),
-                "특별_2_실습_4H": st.column_config.CheckboxColumn("2-실습", width="small"),
+                "공통8H": st.column_config.CheckboxColumn("공통 8H", width="small"),
+                "과목1_온라인4H": st.column_config.CheckboxColumn("과목1-온라인", width="small"),
+                "과목1_감독자4H": st.column_config.CheckboxColumn("과목1-감독자", width="small"),
+                "과목2_온라인4H": st.column_config.CheckboxColumn("과목2-온라인", width="small"),
+                "과목2_감독자4H": st.column_config.CheckboxColumn("과목2-감독자", width="small"),
             }
         )
         edited_target.index = target.index
-        check_cols = ['특별_공통_8H','특별_1_이론_4H','특별_1_실습_4H','특별_2_이론_4H','특별_2_실습_4H']
+        check_cols = ['공통8H','과목1_온라인4H','과목1_감독자4H','과목2_온라인4H','과목2_감독자4H']
         
         if not target[check_cols].equals(edited_target[check_cols]):
             st.session_state.df_final.loc[target_indices, check_cols] = edited_target[check_cols]
