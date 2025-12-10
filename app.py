@@ -7,12 +7,11 @@ import io
 # --- [1. 시스템 설정] ---
 st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️")
 
-# CSS: 깔끔한 디자인 및 안정성 확보
+# CSS: 디자인 및 안정성
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
     .st-emotion-cache-16idsys p {font-size: 1rem;}
-    
     div.stButton > button {
         border-radius: 6px;
         height: 32px;
@@ -20,7 +19,6 @@ st.markdown("""
         padding-bottom: 0px;
         width: 100%;
     }
-    
     div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlockBorderWrapper"] {
         background-color: #f9f9f9;
         border-radius: 10px;
@@ -45,7 +43,6 @@ SPECIAL_EDU_OPTIONS = [
     "35. 허가 및 관리 대상 유해물질의 제조 또는 취급작업"
 ]
 
-# 데이터 정제 함수 (옵션에 없는 값 오류 방지)
 def sanitize_config_df(df):
     target_cols = ['특별교육과목1', '특별교육과목2']
     for col in target_cols:
@@ -65,13 +62,9 @@ with st.sidebar:
     CONFIG_FILE = "config.csv"
 
 def get_github_repo():
-    if not GITHUB_TOKEN or not REPO_NAME:
-        return None
-    try:
-        g = Github(GITHUB_TOKEN)
-        return g.get_repo(REPO_NAME)
-    except Exception as e:
-        return None
+    if not GITHUB_TOKEN or not REPO_NAME: return None
+    try: return Github(GITHUB_TOKEN).get_repo(REPO_NAME)
+    except: return None
 
 def save_all_to_github(data_df, config_df):
     repo = get_github_repo()
@@ -92,8 +85,7 @@ def save_all_to_github(data_df, config_df):
             repo.update_file(CONFIG_FILE, f"Update config: {datetime.now()}", config_content, contents.sha)
         except:
             repo.create_file(CONFIG_FILE, "Init config", config_content)
-
-        st.toast("✅ 데이터가 안전하게 저장되었습니다!", icon="☁️")
+        st.toast("✅ 저장 완료!", icon="☁️")
     except Exception as e:
         st.sidebar.error(f"저장 실패: {e}")
 
@@ -110,7 +102,6 @@ def load_all_from_github():
             if col in loaded_data.columns:
                 loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce').dt.date
     except: pass
-
     try:
         contents = repo.get_contents(CONFIG_FILE)
         csv_string = contents.decoded_content.decode("utf-8")
@@ -140,14 +131,11 @@ for col in ['정렬순서', '부서명', '특별교육과목1', '특별교육과
 
 with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", expanded=False):
     st.caption("부서 순서를 변경하고, 각 부서에 해당하는 특별교육 및 유해인자를 설정하세요.")
-    
-    # 1. 순서 변경 UI
     df_config = st.session_state.dept_config.sort_values('정렬순서')
     with st.container(border=True):
-        for idx, row in df_config.iterrows(): # idx는 실제 인덱스
+        for idx, row in df_config.iterrows():
             c1, c2, c3 = st.columns([8, 1, 1], gap="small", vertical_alignment="center")
             with c1: st.markdown(f"**{row['정렬순서']}. {row['부서명']}**")
-            # 순서 변경 로직 간소화 (인덱스 기반)
             current_order = row['정렬순서']
             with c2:
                 if current_order > 1:
@@ -166,15 +154,9 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
             st.markdown('<hr style="margin: 5px 0; border-top: 1px solid #e0e0e0;">', unsafe_allow_html=True)
 
     st.markdown("#### 📝 매핑 상세 설정")
-    # 2. 데이터 에디터 (Rerun 없이 즉시 반영 구조)
     sorted_df = sanitize_config_df(st.session_state.dept_config.sort_values('정렬순서'))
-    
     edited_dept_config = st.data_editor(
-        sorted_df,
-        num_rows="dynamic", 
-        key="dept_editor", 
-        use_container_width=True,
-        hide_index=True,
+        sorted_df, num_rows="dynamic", key="dept_editor", use_container_width=True, hide_index=True,
         column_config={
             "정렬순서": None,
             "부서명": st.column_config.TextColumn("부서명", required=True),
@@ -183,11 +165,9 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
             "유해인자": st.column_config.TextColumn("유해인자", width="medium"),
         }
     )
-    # 변경 사항이 있으면 세션에 업데이트 (Rerun 호출 안함)
     if not sorted_df.equals(edited_dept_config):
         st.session_state.dept_config = edited_dept_config
 
-    # 매핑 딕셔너리 업데이트
     DEPT_SUB1_MAP = dict(zip(st.session_state.dept_config['부서명'], st.session_state.dept_config['특별교육과목1']))
     DEPT_SUB2_MAP = dict(zip(st.session_state.dept_config['부서명'], st.session_state.dept_config['특별교육과목2']))
     DEPT_FACTOR_MAP = dict(zip(st.session_state.dept_config['부서명'], st.session_state.dept_config['유해인자']))
@@ -222,7 +202,7 @@ for col in required_columns:
         st.session_state.df[col] = False
 
 # --- [4. 메인 대시보드 로직] ---
-df = st.session_state.df.copy() # 화면 표시용 카피
+df = st.session_state.df.copy()
 today = date.today()
 
 # 매핑 적용
@@ -255,11 +235,8 @@ def calc_next_health(row):
     return row['최근_특수검진일'] + timedelta(days=cycle)
 
 df['다음_특수검진일'] = df.apply(calc_next_health, axis=1)
-
-# 대시보드용 데이터 (퇴사자 제외)
 dashboard_df = df[df['퇴사여부'] == False]
 
-# === [상단 요약] ===
 col1, col2, col3, col4 = st.columns(4)
 with col1: st.metric("👥 총 관리 인원", f"{len(dashboard_df)}명")
 with col2: st.metric("🌱 신규 입사자", f"{len(dashboard_df[dashboard_df['법적_신규자']])}명")
@@ -268,7 +245,7 @@ with col4: st.metric("🏥 검진 대상", f"{len(dashboard_df[(dashboard_df['�
 
 st.markdown("---")
 
-# --- [5. 데이터 입력 및 저장] ---
+# --- [5. 데이터 입력 및 저장 (사이드바)] ---
 with st.sidebar:
     c1, c2 = st.columns(2)
     with c1:
@@ -282,24 +259,56 @@ with st.sidebar:
             save_all_to_github(st.session_state.df, st.session_state.dept_config)
     st.divider()
 
-    with st.expander("📂 근로자 명부 일괄 등록 (Excel/CSV)", expanded=False):
-        uploaded_file = st.file_uploader("파일 업로드", type=['csv', 'xlsx'])
-        if uploaded_file is not None:
-            if st.button("데이터 병합하기", use_container_width=True):
-                try:
-                    df_new = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+    # --- [강력해진 일괄 등록] ---
+    with st.expander("📂 근로자 명부 일괄 등록", expanded=False):
+        uploaded_file = st.file_uploader("파일 업로드 (xlsx/csv)", type=['csv', 'xlsx'])
+        if uploaded_file:
+            # 1. 파일 읽기
+            try:
+                if uploaded_file.name.endswith('.csv'):
+                    df_new = pd.read_csv(uploaded_file)
+                else:
+                    df_new = pd.read_excel(uploaded_file)
+                
+                # 2. 미리보기
+                st.caption(f"총 {len(df_new)}행 발견. 첫 5줄 미리보기:")
+                st.dataframe(df_new.head(), use_container_width=True, height=150)
+
+                # 3. 병합 버튼
+                if st.button("데이터 병합 실행", type="primary"):
                     if '성명' not in df_new.columns:
-                        st.error("'성명' 컬럼이 필요합니다.")
+                        st.error("필수 컬럼 '성명'이 없습니다.")
                     else:
-                        for col in st.session_state.df.columns:
-                            if col not in df_new.columns: df_new[col] = None
-                        df_new = df_new[st.session_state.df.columns] # 컬럼 순서 맞춤
+                        # 컬럼 매칭 및 기본값 채우기
+                        current_cols = st.session_state.df.columns
+                        for col in current_cols:
+                            if col not in df_new.columns:
+                                df_new[col] = None # 없으면 None 채움
+                        
+                        # 필요한 컬럼만 순서대로 가져오기
+                        df_new = df_new[current_cols]
+                        
+                        # 날짜 변환 (가장 중요)
+                        date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
+                        for col in date_cols:
+                            # 엑셀 Timestamp -> datetime.date로 안전 변환
+                            df_new[col] = pd.to_datetime(df_new[col], errors='coerce').dt.date
+                        
+                        # 불리언(True/False) 변환
+                        bool_cols = [c for c in current_cols if '이수' in c or '4H' in c or '8H' in c or '여부' in c]
+                        for col in bool_cols:
+                            df_new[col] = df_new[col].fillna(False).astype(bool)
+
+                        # 병합 및 저장
                         st.session_state.df = pd.concat([st.session_state.df, df_new], ignore_index=True)
-                        st.success("추가 완료!")
-                        st.rerun()
-                except Exception as e: st.error(f"오류: {e}")
+                        st.success(f"{len(df_new)}명 등록 완료!")
+                        st.rerun() # 여기서는 1회 리런 필요
+
+            except Exception as e:
+                st.error(f"파일 읽기 오류: {e}")
 
     st.markdown("### 📝 근로자 명부 수정")
+    # 메인 에디터 (Rerun 방지 적용)
     edited_df = st.data_editor(
         st.session_state.df,
         num_rows="dynamic",
@@ -317,49 +326,37 @@ with st.sidebar:
             "검진단계": None, "최근_특수검진일": None
         }
     )
-    # 메인 에디터 변경 감지 및 업데이트
     if not st.session_state.df.equals(edited_df):
         st.session_state.df = edited_df
 
-# --- [6. 탭 화면 구성 - 안정적인 업데이트 로직 적용] ---
-# 핵심 수정: reset_index를 제거하고 원본 인덱스를 보존하여 업데이트 충돌 방지
+# --- [6. 탭 화면 구성 - 안정적인 업데이트 로직] ---
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 입사자", "⚠️ 특별교육", "🏥 특수건강검진"])
 
 def safe_update_from_editor(subset_view, editor_key, visible_cols):
-    # 인덱스를 리셋하지 않고 원본 인덱스 그대로 사용
-    # No 컬럼은 보여주기용으로만 생성하고, 데이터 저장에는 관여하지 않음
+    # 인덱스 유지 + No 컬럼 표시용 생성
     view_with_no = subset_view.copy()
     view_with_no.insert(0, "No", range(1, len(view_with_no) + 1))
     
-    # 에디터 표시
     edited_subset = st.data_editor(
         view_with_no,
         key=editor_key,
         use_container_width=True,
         hide_index=True,
         column_config=visible_cols,
-        disabled=["No"] # No 컬럼 수정 불가
+        disabled=["No"]
     )
     
-    # 변경사항이 감지되면 원본 st.session_state.df에 반영 (인덱스 기준)
-    # No 컬럼 제외하고 비교
     edited_data_only = edited_subset.drop(columns=["No"])
     subset_data_only = subset_view[edited_data_only.columns]
     
     if not subset_data_only.equals(edited_data_only):
-        # 변경된 부분만 원본 데이터프레임에 업데이트 (Index Matching)
-        # update 메서드나 인덱스 기반 대입 사용
         st.session_state.df.update(edited_data_only)
-        # Rerun 없이 자연스럽게 다음 사이클에 반영됨
 
 with tab1:
     st.subheader("안전보건관리책임자 / 관리감독자")
-    # 원본 인덱스 유지를 위해 reset_index 삭제
     target = dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])].copy()
-    
     if not target.empty:
         target['상태'] = target.apply(lambda r: "기한초과" if pd.isna(r['다음_직무교육일']) or (r['다음_직무교육일'] - today).days < 0 else ("임박" if (r['다음_직무교육일'] - today).days < 30 else "양호"), axis=1)
-        
         cols_config = {
             "No": st.column_config.NumberColumn("No", width="small"),
             "성명": st.column_config.TextColumn("성명", disabled=True),
@@ -368,11 +365,8 @@ with tab1:
             "다음_직무교육일": st.column_config.DateColumn("다음 예정일", disabled=True),
             "상태": st.column_config.TextColumn("상태", width="small", disabled=True)
         }
-        # 필요한 컬럼만 추출하지만 인덱스는 유지
-        display_cols = ['성명', '직책', '최근_직무교육일', '다음_직무교육일', '상태']
-        safe_update_from_editor(target[display_cols], "editor_mgr", cols_config)
-    else:
-        st.info("대상자가 없습니다.")
+        safe_update_from_editor(target[['성명', '직책', '최근_직무교육일', '다음_직무교육일', '상태']], "editor_mgr", cols_config)
+    else: st.info("대상자가 없습니다.")
 
 with tab2:
     st.subheader("폐기물 담당자")
@@ -387,16 +381,13 @@ with tab2:
             "다음_직무교육일": st.column_config.DateColumn("다음 예정일", disabled=True),
             "상태": st.column_config.TextColumn("상태", width="small", disabled=True)
         }
-        display_cols = ['성명', '부서', '최근_직무교육일', '다음_직무교육일', '상태']
-        safe_update_from_editor(target[display_cols], "editor_waste", cols_config)
-    else:
-        st.info("대상자가 없습니다.")
+        safe_update_from_editor(target[['성명', '부서', '최근_직무교육일', '다음_직무교육일', '상태']], "editor_waste", cols_config)
+    else: st.info("대상자가 없습니다.")
 
 with tab3:
     st.subheader("신규 입사자")
     try: selected_year = st.pills("조회 연도", [today.year, today.year-1], default=today.year)
     except: selected_year = st.radio("조회 연도", [today.year, today.year-1], horizontal=True)
-    
     target = dashboard_df[dashboard_df['입사연도'] == selected_year].copy()
     if not target.empty:
         cols_config = {
@@ -406,18 +397,14 @@ with tab3:
             "입사일": st.column_config.DateColumn("입사일", disabled=True),
             "부서": st.column_config.TextColumn("부서", disabled=True)
         }
-        display_cols = ['신규교육_이수', '성명', '입사일', '부서']
-        safe_update_from_editor(target[display_cols], "editor_new", cols_config)
-    else:
-        st.info("대상자가 없습니다.")
+        safe_update_from_editor(target[['신규교육_이수', '성명', '입사일', '부서']], "editor_new", cols_config)
+    else: st.info("대상자가 없습니다.")
 
 with tab4:
     st.subheader("특별안전보건교육")
     target = dashboard_df[dashboard_df['특별교육_과목1'] != '해당없음'].copy()
     if not target.empty:
-        # 신규 입사자 공통 교육 자동 체크 (표시용)
         target.loc[target['법적_신규자'], '특별_공통_8H'] = True
-        
         cols_config = {
             "No": st.column_config.NumberColumn("No", width="small"),
             "성명": st.column_config.TextColumn("성명", disabled=True),
@@ -431,21 +418,15 @@ with tab4:
             "특별_2_이론_4H": st.column_config.CheckboxColumn("이론4H", width="small"),
             "특별_2_실습_4H": st.column_config.CheckboxColumn("실습4H", width="small")
         }
-        display_cols = [
-            "성명", "부서", "법적_신규자", "특별_공통_8H", 
-            "특별교육_과목1", "특별_1_이론_4H", "특별_1_실습_4H",
-            "특별교육_과목2", "특별_2_이론_4H", "특별_2_실습_4H"
-        ]
+        display_cols = ["성명", "부서", "법적_신규자", "특별_공통_8H", "특별교육_과목1", "특별_1_이론_4H", "특별_1_실습_4H", "특별교육_과목2", "특별_2_이론_4H", "특별_2_실습_4H"]
         safe_update_from_editor(target[display_cols], "editor_special", cols_config)
-    else:
-        st.info("대상자가 없습니다.")
+    else: st.info("대상자가 없습니다.")
 
 with tab5:
     st.subheader("특수건강검진")
     target = dashboard_df[(dashboard_df['유해인자'].notna()) & (dashboard_df['유해인자'] != '없음')].copy()
     if not target.empty:
         target['상태'] = target.apply(lambda r: "검진필요" if r['검진단계'] == "배치전(미실시)" else ("-" if pd.isna(r['다음_특수검진일']) else ("기한초과" if (r['다음_특수검진일'] - today).days < 0 else "양호")), axis=1)
-        
         cols_config = {
             "No": st.column_config.NumberColumn("No", width="small"),
             "성명": st.column_config.TextColumn("성명", disabled=True),
@@ -456,7 +437,5 @@ with tab5:
             "다음_특수검진일": st.column_config.DateColumn("다음 예정일", disabled=True),
             "상태": st.column_config.TextColumn("상태", width="small", disabled=True)
         }
-        display_cols = ["성명", "부서", "유해인자", "검진단계", "최근_특수검진일", "다음_특수검진일", "상태"]
-        safe_update_from_editor(target[display_cols], "editor_health", cols_config)
-    else:
-        st.info("대상자가 없습니다.")
+        safe_update_from_editor(target[["성명", "부서", "유해인자", "검진단계", "최근_특수검진일", "다음_특수검진일", "상태"]], "editor_health", cols_config)
+    else: st.info("대상자가 없습니다.")
