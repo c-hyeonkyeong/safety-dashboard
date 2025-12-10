@@ -35,10 +35,6 @@ st.markdown("---")
 # ==========================================
 SPECIAL_EDU_OPTIONS = [
     "해당없음",
-    "아크용접 등 화기작업", 
-    "고압 전기 취급 작업", 
-    "밀폐공간 내부 작업", 
-    "그라인더 작업",
     "4. 폭발성·물반응성·자기반응성·자기발열성 물질, 자연발화성 액체·고체 및 인화성 액체의 제조 또는 취급작업",
     "35. 허가 및 관리 대상 유해물질의 제조 또는 취급작업"
 ]
@@ -289,7 +285,6 @@ df.loc[mask_manager, '다음_직무교육일'] = df[mask_manager]['최근_직무
 mask_supervisor = df['직책'] == '관리감독자'
 df.loc[mask_supervisor, '다음_직무교육일'] = df[mask_supervisor]['최근_직무교육일'].apply(lambda x: add_days(x, 365))
 mask_waste = df['직책'] == '폐기물담당자'
-# [수정] 폐기물 담당자 계산 로직 점검 완료
 df.loc[mask_waste, '다음_직무교육일'] = df[mask_waste]['최근_직무교육일'].apply(lambda x: add_days(x, 1095))
 
 def calc_next_health(row):
@@ -406,28 +401,20 @@ def safe_update_from_editor(subset_view, editor_key, visible_cols):
     if not subset_data_only.equals(edited_data_only):
         st.session_state.df.update(edited_data_only)
 
-# [수정] 상태 뱃지 매핑 정의
-STATUS_BADGE = {
-    "양호": "success",
-    "임박": "warning",
-    "기한초과": "error",
-    "교육필요": "error",
-    "검진필요": "error"
-}
-
 with tab1:
     st.subheader("안전보건관리책임자 / 관리감독자")
     target = dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])].copy()
     if not target.empty:
-        target['상태'] = target.apply(lambda r: "기한초과" if pd.isna(r['다음_직무교육일']) or (r['다음_직무교육일'] - today).days < 0 else ("임박" if (r['다음_직무교육일'] - today).days < 30 else "양호"), axis=1)
+        # [수정] 이모지 추가 로직
+        target['상태'] = target.apply(lambda r: "🔴 기한초과" if pd.isna(r['다음_직무교육일']) or (r['다음_직무교육일'] - today).days < 0 else ("🟡 임박" if (r['다음_직무교육일'] - today).days < 30 else "🟢 양호"), axis=1)
         cols_config = {
             "No": st.column_config.NumberColumn("No", width="small"),
             "성명": st.column_config.TextColumn("성명", disabled=True),
             "직책": st.column_config.TextColumn("직책", disabled=True),
             "최근_직무교육일": st.column_config.DateColumn("최근 직무교육일"),
             "다음_직무교육일": st.column_config.DateColumn("다음 예정일", disabled=True),
-            # [수정] 상태 아이콘 적용
-            "상태": st.column_config.StatusColumn("상태", width="small", options_dict=STATUS_BADGE)
+            # [수정] TextColumn으로 변경 (StatusColumn 삭제)
+            "상태": st.column_config.TextColumn("상태", width="small", disabled=True)
         }
         safe_update_from_editor(target[['성명', '직책', '최근_직무교육일', '다음_직무교육일', '상태']], "editor_mgr", cols_config)
     else: st.info("대상자가 없습니다.")
@@ -436,15 +423,16 @@ with tab2:
     st.subheader("폐기물 담당자")
     target = dashboard_df[dashboard_df['직책'] == '폐기물담당자'].copy()
     if not target.empty:
-        target['상태'] = target.apply(lambda r: "교육필요" if pd.isna(r['다음_직무교육일']) else ("기한초과" if (r['다음_직무교육일'] - today).days < 0 else "양호"), axis=1)
+        # [수정] 이모지 추가 로직
+        target['상태'] = target.apply(lambda r: "🔴 교육필요" if pd.isna(r['다음_직무교육일']) else ("🔴 기한초과" if (r['다음_직무교육일'] - today).days < 0 else "🟢 양호"), axis=1)
         cols_config = {
             "No": st.column_config.NumberColumn("No", width="small"),
             "성명": st.column_config.TextColumn("성명", disabled=True),
             "부서": st.column_config.TextColumn("부서", disabled=True),
             "최근_직무교육일": st.column_config.DateColumn("최근 직무교육일"),
             "다음_직무교육일": st.column_config.DateColumn("다음 예정일", disabled=True),
-            # [수정] 상태 아이콘 적용
-            "상태": st.column_config.StatusColumn("상태", width="small", options_dict=STATUS_BADGE)
+            # [수정] TextColumn으로 변경
+            "상태": st.column_config.TextColumn("상태", width="small", disabled=True)
         }
         safe_update_from_editor(target[['성명', '부서', '최근_직무교육일', '다음_직무교육일', '상태']], "editor_waste", cols_config)
     else: st.info("대상자가 없습니다.")
@@ -491,7 +479,8 @@ with tab5:
     st.subheader("특수건강검진")
     target = dashboard_df[(dashboard_df['유해인자'].notna()) & (dashboard_df['유해인자'] != '없음')].copy()
     if not target.empty:
-        target['상태'] = target.apply(lambda r: "검진필요" if r['검진단계'] == "배치전(미실시)" else ("-" if pd.isna(r['다음_특수검진일']) else ("기한초과" if (r['다음_특수검진일'] - today).days < 0 else "양호")), axis=1)
+        # [수정] 이모지 추가 로직
+        target['상태'] = target.apply(lambda r: "🔴 검진필요" if r['검진단계'] == "배치전(미실시)" else ("-" if pd.isna(r['다음_특수검진일']) else ("🔴 기한초과" if (r['다음_특수검진일'] - today).days < 0 else ("🟡 임박" if (r['다음_특수검진일'] - today).days < 30 else "🟢 양호"))), axis=1)
         cols_config = {
             "No": st.column_config.NumberColumn("No", width="small"),
             "성명": st.column_config.TextColumn("성명", disabled=True),
@@ -500,8 +489,8 @@ with tab5:
             "검진단계": st.column_config.SelectboxColumn("검진단계", options=HEALTH_PHASES, required=True),
             "최근_특수검진일": st.column_config.DateColumn("최근 검진일"),
             "다음_특수검진일": st.column_config.DateColumn("다음 예정일", disabled=True),
-            # [수정] 상태 아이콘 적용
-            "상태": st.column_config.StatusColumn("상태", width="small", options_dict=STATUS_BADGE)
+            # [수정] TextColumn으로 변경
+            "상태": st.column_config.TextColumn("상태", width="small", disabled=True)
         }
         safe_update_from_editor(target[["성명", "부서", "유해인자", "검진단계", "최근_특수검진일", "다음_특수검진일", "상태"]], "editor_health", cols_config)
     else: st.info("대상자가 없습니다.")
