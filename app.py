@@ -42,50 +42,37 @@ def sanitize_config_df(df):
     else: df['유해인자'] = df['유해인자'].fillna("없음")
     return df
 
-# [핵심] 직무교육 계산 함수 (Timestamp 기반 안전 계산)
+# [핵심] 직무교육 계산 함수
 def calculate_job_training_date(row):
     last_date = row.get('최근_직무교육일')
     
-    # 빈 값 체크
     if pd.isna(last_date) or str(last_date) == 'NaT' or str(last_date).strip() == "":
         return None
     
-    # Timestamp 객체로 확실히 변환
+    # 타입 보장
     if not isinstance(last_date, pd.Timestamp):
-        try:
-            last_date = pd.to_datetime(last_date)
-        except:
-            return None
+        try: last_date = pd.to_datetime(last_date)
+        except: return None
             
     role = str(row.get('직책', '')).replace(" ", "").strip()
-    
     try:
-        if '책임자' in role: 
-            return last_date + timedelta(days=730)
-        elif '폐기물' in role:
-            return last_date + timedelta(days=1095)
-        elif '감독자' in role:
-            return last_date + timedelta(days=365)
-        else:
-            return None
-    except:
-        return None
+        if '책임자' in role: return last_date + timedelta(days=730)
+        elif '폐기물' in role: return last_date + timedelta(days=1095)
+        elif '감독자' in role: return last_date + timedelta(days=365)
+        else: return None
+    except: return None
 
-# [핵심 2] D-Day 상태 표시 안전 함수
+# [핵심] D-Day 상태 표시 함수
 def get_dday_status(target_date):
-    if pd.isna(target_date) or str(target_date) == 'NaT' or str(target_date).strip() == "":
-        return "-"
-    
+    if pd.isna(target_date) or str(target_date) == 'NaT' or str(target_date).strip() == "": return "-"
     try:
         target_ts = pd.to_datetime(target_date)
         today_ts = pd.Timestamp(date.today())
         diff = (target_ts - today_ts).days
-        
         if diff < 0: return "🔴 초과"
         elif diff < 30: return "🟡 임박"
         else: return "🟢 양호"
-    except:
-        return "-"
+    except: return "-"
 
 # ==========================================
 # [사이드바] 통합 메뉴
@@ -95,14 +82,12 @@ with st.sidebar:
     
     col_btn1, col_btn2, col_btn3 = st.columns(3)
     
-    # (1) 강제 새로고침
     with col_btn1:
         if st.button("🔄 새로고침", type="primary"):
             st.cache_data.clear()
             st.session_state.clear()
             st.rerun()
             
-    # GitHub 설정
     with st.expander("☁️ GitHub 토큰 설정", expanded=False):
         GITHUB_TOKEN = st.text_input("🔑 GitHub 토큰", type="password")
         REPO_NAME = st.text_input("📂 레포지토리 (user/repo)")
@@ -121,10 +106,10 @@ with st.sidebar:
             return
         try:
             save_df = data_df.copy()
-            # 저장 시 날짜를 문자열로 변환 (충돌 방지)
             date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일', '다음_직무교육일', '다음_특수검진일']
             for col in date_cols:
                 if col in save_df.columns:
+                    # NaT를 빈 문자열로 변환하여 저장
                     save_df[col] = save_df[col].apply(lambda x: x.strftime('%Y-%m-%d') if not pd.isna(x) else '')
 
             data_content = save_df.to_csv(index=False)
@@ -153,11 +138,11 @@ with st.sidebar:
             csv_string = contents.decoded_content.decode("utf-8")
             loaded_data = pd.read_csv(io.StringIO(csv_string))
             
-            # [수정] 불러올 때 datetime64로 변환 (.dt.date 삭제)
+            # [수정] 불러올 때 문자열로 처리 후 변환
             date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
             for col in date_cols:
                 if col in loaded_data.columns:
-                    loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce')
+                    loaded_data[col] = pd.to_datetime(loaded_data[col].astype(str), errors='coerce')
             
             if '검진단계' not in loaded_data.columns: loaded_data['검진단계'] = "배치전(미실시)"
             else: loaded_data['검진단계'] = loaded_data['검진단계'].fillna("배치전(미실시)")
@@ -171,7 +156,6 @@ with st.sidebar:
         except: pass
         return loaded_data, loaded_config
 
-    # (2) 불러오기 버튼
     with col_btn2:
         if st.button("📂 불러오기"):
             ld, lc = load_all_from_github()
@@ -181,7 +165,6 @@ with st.sidebar:
             if lc is not None: st.session_state.dept_config_final = lc
             st.rerun()
             
-    # (3) 저장하기 버튼
     with col_btn3:
         if st.button("💾 저장하기"):
             if 'df_final' in st.session_state and 'dept_config_final' in st.session_state:
@@ -191,7 +174,7 @@ with st.sidebar:
 
     st.divider()
 
-    # 1. 관리자 설정 (부서 매핑)
+    # 1. 관리자 설정
     if 'dept_config_final' not in st.session_state:
         st.session_state.dept_config_final = pd.DataFrame({
             '정렬순서': [1, 2, 3, 4],
@@ -261,11 +244,11 @@ with st.sidebar:
         }
         st.session_state.df_final = pd.DataFrame(data)
 
-    # [중요] 날짜 타입 강제 변환
+    # [오류 해결] .astype(str)로 통일 후 변환 (TypeError 방지)
     date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
     for col in date_cols:
         if col in st.session_state.df_final.columns:
-            st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce')
+            st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col].astype(str), errors='coerce')
 
     bool_cols = ['퇴사여부', '특수검진_대상', '신규교육_이수', '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H']
     for col in bool_cols:
@@ -315,16 +298,17 @@ with st.sidebar:
             st.session_state.df_final = edited_df
 
 # ==========================================
-# [메인 화면] 계산 및 대시보드 출력
+# [메인 화면] 계산 및 대시보드
 # ==========================================
 
 # 1. 계산 로직
 df = st.session_state.df_final.copy()
 today = date.today()
 
+# 날짜 보장
 for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
     if col in df.columns: 
-        df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
+        df[col] = pd.to_datetime(df[col], errors='coerce')
 
 df['특별교육_과목1'] = df['부서'].map(DEPT_S1).fillna("설정필요")
 df['특별교육_과목2'] = df['부서'].map(DEPT_S2).fillna("해당없음")
@@ -343,7 +327,6 @@ df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce'
 df['입사연도'] = df['입사일_dt'].dt.year
 df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
 
-# [수정] 함수 기반 계산 적용
 df['다음_직무교육일'] = df.apply(calculate_job_training_date, axis=1)
 
 def calc_next_health(row):
@@ -355,7 +338,7 @@ def calc_next_health(row):
 df['다음_특수검진일'] = df.apply(calc_next_health, axis=1)
 dashboard_df = df[df['퇴사여부'] == False]
 
-# 2. 대시보드 출력
+# 2. 대시보드
 col1, col2, col3, col4 = st.columns(4)
 with col1: st.metric("👥 총 관리 인원", f"{len(dashboard_df)}명")
 with col2: st.metric("🌱 신규 입사자", f"{len(dashboard_df[dashboard_df['법적_신규자']])}명")
@@ -367,7 +350,6 @@ st.divider()
 # 3. 탭 구성
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 입사자", "⚠️ 특별교육", "🏥 특수건강검진"])
 
-# [탭 1] 책임자/감독자 (직무교육일 저장 기능 추가)
 with tab1:
     st.subheader("안전보건관리책임자 (2년) / 관리감독자 (1년)")
     mask_mgr = dashboard_df['직책'].astype(str).str.replace(" ", "").str.contains("책임자|감독자", na=False)
@@ -375,7 +357,6 @@ with tab1:
     target = dashboard_df.loc[target_indices].copy()
     
     if not target.empty:
-        # [수정] 안전 함수 사용
         target['상태'] = target['다음_직무교육일'].apply(get_dday_status)
         
         edited_target = st.data_editor(
@@ -388,14 +369,12 @@ with tab1:
             }
         )
         
-        # [저장 로직]
         edited_target.index = target.index
         if not target[['최근_직무교육일']].equals(edited_target[['최근_직무교육일']]):
             st.session_state.df_final.loc[target_indices, '최근_직무교육일'] = edited_target['최근_직무교육일']
             st.rerun()
     else: st.info("대상자 없음")
 
-# [탭 2] 폐기물 담당자 (직무교육일 저장 기능 추가)
 with tab2:
     st.subheader("폐기물 담당자 (3년)")
     mask_waste = dashboard_df['직책'].astype(str).str.replace(" ", "").str.contains("폐기물", na=False)
@@ -403,7 +382,6 @@ with tab2:
     target = dashboard_df.loc[target_indices].copy()
     
     if not target.empty:
-        # [수정] 안전 함수 사용
         target['상태'] = target['다음_직무교육일'].apply(get_dday_status)
         
         edited_target = st.data_editor(
@@ -416,7 +394,6 @@ with tab2:
             }
         )
         
-        # [저장 로직]
         edited_target.index = target.index
         if not target[['최근_직무교육일']].equals(edited_target[['최근_직무교육일']]):
             st.session_state.df_final.loc[target_indices, '최근_직무교육일'] = edited_target['최근_직무교육일']
@@ -488,7 +465,6 @@ with tab5:
     target = dashboard_df.loc[target_indices].copy()
     
     if not target.empty:
-        # [수정] 안전 함수 사용
         target['상태'] = target.apply(lambda r: "🔴 검진필요" if r['검진단계']=="배치전(미실시)" else get_dday_status(r['다음_특수검진일']), axis=1)
         
         edited_target = st.data_editor(
