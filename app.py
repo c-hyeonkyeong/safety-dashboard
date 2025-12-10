@@ -229,7 +229,6 @@ with st.sidebar:
     st.markdown("##### 👥 명부 직접 수정")
     st.caption("특수검진 제외는 여기서 체크 해제")
     
-    # [수정 완료] 날짜 컬럼에 format 지정하여 달력만 나오게 설정
     edited_df = st.data_editor(
         st.session_state.df_final,
         num_rows="dynamic",
@@ -241,9 +240,9 @@ with st.sidebar:
             "성명": st.column_config.TextColumn("성명", width="medium"),
             "직책": st.column_config.SelectboxColumn("직책", options=ROLES, width="medium"),
             "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST, width="medium"),
-            "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"), # 달력만 표시
-            "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), # 달력만 표시
-            "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"), # 달력만 표시
+            "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+            "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+            "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
             "검진단계": None
         }
     )
@@ -264,7 +263,12 @@ for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
 
 df['특별교육_과목1'] = df['부서'].map(DEPT_S1).fillna("설정필요")
 df['특별교육_과목2'] = df['부서'].map(DEPT_S2).fillna("해당없음")
-df['유해인자'] = df['부서'].map(DEPT_FAC).fillna("확인필요")
+df['유해인자'] = df['부서'].map(DEPT_FAC).fillna("없음")
+
+# [요청사항 반영] 유해인자가 '없음'이면 특수검진 대상 강제 해제 (False)
+# 이 로직을 통해 리스트에서 자동으로 사라지게 됨
+mask_no_factor = df['유해인자'].isin(['없음', '', '해당없음'])
+df.loc[mask_no_factor, '특수검진_대상'] = False
 
 def add_days(d, days):
     try: 
@@ -314,33 +318,21 @@ with tab1:
     target = dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])].copy()
     if not target.empty:
         target['상태'] = target.apply(lambda r: "🔴 초과" if pd.isna(r['다음_직무교육일']) or (r['다음_직무교육일']-today).days<0 else "🟢 양호", axis=1)
-        safe_update_simple(
-            target[['성명','직책','최근_직무교육일','다음_직무교육일','상태']], 
-            "t1", 
-            {"최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), "다음_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD")}
-        )
+        safe_update_simple(target[['성명','직책','최근_직무교육일','다음_직무교육일','상태']], "t1", {"최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), "다음_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD")})
     else: st.info("대상자 없음")
 
 with tab2:
     target = dashboard_df[dashboard_df['직책'].astype(str).str.strip() == '폐기물담당자'].copy()
     if not target.empty:
         target['상태'] = target.apply(lambda r: "🔴 필요" if pd.isna(r['최근_직무교육일']) else ("🔴 초과" if (r['다음_직무교육일']-today).days<0 else "🟢 양호"), axis=1)
-        safe_update_simple(
-            target[['성명','부서','최근_직무교육일','다음_직무교육일','상태']], 
-            "t2", 
-            {"최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), "다음_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD")}
-        )
+        safe_update_simple(target[['성명','부서','최근_직무교육일','다음_직무교육일','상태']], "t2", {"최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), "다음_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD")})
     else: st.info("대상자 없음")
 
 with tab3:
     years = [today.year, today.year-1, today.year-2]
     sel_y = st.radio("입사년도 선택", years, horizontal=True)
     target = dashboard_df[dashboard_df['입사연도'] == sel_y].copy()
-    safe_update_simple(
-        target[['신규교육_이수','성명','입사일','부서']], 
-        "t3", 
-        {"입사일": st.column_config.DateColumn(format="YYYY-MM-DD")}
-    )
+    safe_update_simple(target[['신규교육_이수','성명','입사일','부서']], "t3", {"입사일": st.column_config.DateColumn(format="YYYY-MM-DD")})
 
 with tab4:
     target = dashboard_df[dashboard_df['특별교육_과목1'] != '해당없음'].copy()
@@ -350,6 +342,7 @@ with tab4:
 with tab5:
     st.subheader("특수건강검진 현황")
     
+    # 여기서 유해인자가 '없음'인 사람은 자동으로 제외됨 (위의 로직에 의해)
     target_indices = dashboard_df[dashboard_df['특수검진_대상'] == True].index
     target = dashboard_df.loc[target_indices].copy()
     
@@ -362,7 +355,6 @@ with tab5:
             use_container_width=True,
             hide_index=True,
             column_config={
-                # [수정] format="YYYY-MM-DD" 추가로 달력만 표시
                 "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
                 "다음_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD", disabled=True),
                 "상태": st.column_config.TextColumn(disabled=True),
@@ -375,4 +367,4 @@ with tab5:
         if not target[compare_cols].equals(edited_target[compare_cols]):
             st.session_state.df_final.loc[target_indices, compare_cols] = edited_target[compare_cols]
     else: 
-        st.info("대상자가 없습니다. 왼쪽 사이드바 명부에서 검진대상을 체크해주세요.")
+        st.info("대상자가 없습니다. 왼쪽 사이드바 명부에서 검진대상을 체크해주세요. (유해인자가 '없음'인 경우 자동으로 제외됩니다)")
