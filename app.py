@@ -151,3 +151,4 @@ st.divider()
 st.info("💡 데이터를 수정하고 왼쪽 사이드바의 **[GitHub에 저장하기]** 버튼을 누르면 자동 저장됩니다.")
 st.dataframe(df, use_container_width=True)
 
+
