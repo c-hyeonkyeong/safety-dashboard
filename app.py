@@ -38,6 +38,25 @@ st.title("🛡️ 산업안전보건 통합 관리 시스템")
 st.markdown("---")
 
 # ==========================================
+# [중요] 특별교육 옵션 리스트 (전역 변수)
+# ==========================================
+SPECIAL_EDU_OPTIONS = [
+    "해당없음",
+    "4. 폭발성·물반응성·자기반응성·자기발열성 물질, 자연발화성 액체·고체 및 인화성 액체의 제조 또는 취급작업",
+    "35. 허가 및 관리 대상 유해물질의 제조 또는 취급작업"
+]
+
+# 데이터 정제 함수 (옵션에 없는 값은 '해당없음'으로 강제 변환)
+def sanitize_config_df(df):
+    target_cols = ['특별교육과목1', '특별교육과목2']
+    for col in target_cols:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+            # nan 문자열 처리 및 옵션에 없는 값 처리
+            df[col] = df[col].apply(lambda x: x if x in SPECIAL_EDU_OPTIONS else "해당없음")
+    return df
+
+# ==========================================
 # [GitHub 연동 설정]
 # ==========================================
 with st.sidebar:
@@ -103,6 +122,7 @@ def load_all_from_github():
         contents = repo.get_contents(CONFIG_FILE)
         csv_string = contents.decoded_content.decode("utf-8")
         loaded_config = pd.read_csv(io.StringIO(csv_string))
+        loaded_config = sanitize_config_df(loaded_config)
     except:
         pass
         
@@ -117,20 +137,15 @@ if 'dept_config' not in st.session_state:
         '특별교육과목2': ['그라인더 작업', '해당없음', '해당없음', '해당없음'],
         '유해인자': ['용접흄, 분진', '전류(감전)', '산소결핍', '없음']
     })
+    st.session_state.dept_config = sanitize_config_df(st.session_state.dept_config)
 
-# 안전장치
+# 안전장치: 컬럼 보장
 for col in ['정렬순서', '부서명', '특별교육과목1', '특별교육과목2', '유해인자']:
     if col not in st.session_state.dept_config.columns:
         if col == '정렬순서':
              st.session_state.dept_config.insert(0, '정렬순서', range(1, len(st.session_state.dept_config) + 1))
         else:
             st.session_state.dept_config[col] = '해당없음'
-
-SPECIAL_EDU_OPTIONS = [
-    "해당없음",
-    "4. 폭발성·물반응성·자기반응성·자기발열성 물질, 자연발화성 액체·고체 및 인화성 액체의 제조 또는 취급작업",
-    "35. 허가 및 관리 대상 유해물질의 제조 또는 취급작업"
-]
 
 with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", expanded=False):
     st.caption("부서 순서를 변경하고, 각 부서에 해당하는 특별교육 및 유해인자를 설정하세요.")
@@ -170,8 +185,11 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
                 st.markdown('<hr style="margin: 5px 0; border-top: 1px solid #e0e0e0;">', unsafe_allow_html=True)
 
     st.markdown("#### 📝 매핑 상세 설정")
-    sorted_df = st.session_state.dept_config.sort_values('정렬순서')
     
+    # 데이터 에디터에 넣기 전 다시 한 번 세탁
+    sorted_df = sanitize_config_df(st.session_state.dept_config.sort_values('정렬순서'))
+
+    # [수정] st.rerun() 제거하여 안정성 확보
     edited_dept_config = st.data_editor(
         sorted_df,
         num_rows="dynamic", 
@@ -181,21 +199,12 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
         column_config={
             "정렬순서": None,
             "부서명": st.column_config.TextColumn("부서명", required=True),
-            "특별교육과목1": st.column_config.SelectboxColumn(
-                "특별교육 1", 
-                width="large", 
-                options=SPECIAL_EDU_OPTIONS,
-                required=True
-            ),
-            "특별교육과목2": st.column_config.SelectboxColumn(
-                "특별교육 2", 
-                width="large", 
-                options=SPECIAL_EDU_OPTIONS,
-                required=True
-            ),
+            "특별교육과목1": st.column_config.SelectboxColumn("특별교육 1", width="large", options=SPECIAL_EDU_OPTIONS, required=True),
+            "특별교육과목2": st.column_config.SelectboxColumn("특별교육 2", width="large", options=SPECIAL_EDU_OPTIONS, required=True),
             "유해인자": st.column_config.TextColumn("유해인자", width="medium"),
         }
     )
+    # 세션 상태 업데이트 (Rerun 호출 없이 자연스럽게 반영)
     st.session_state.dept_config = edited_dept_config
     
     DEPT_SUB1_MAP = dict(zip(edited_dept_config['부서명'], edited_dept_config['특별교육과목1']))
@@ -302,7 +311,7 @@ with st.sidebar:
             
     st.divider()
 
-    # --- [추가된 기능] 일괄 업로드 기능 ---
+    # --- [일괄 업로드 기능] ---
     with st.expander("📂 근로자 명부 일괄 등록 (Excel/CSV)", expanded=False):
         uploaded_file = st.file_uploader("파일 업로드", type=['csv', 'xlsx'])
         if uploaded_file is not None:
@@ -312,16 +321,13 @@ with st.sidebar:
                 else:
                     df_new = pd.read_excel(uploaded_file)
                 
-                # 필수 컬럼 확인
                 if '성명' not in df_new.columns:
                     st.error("오류: 파일에 '성명' 컬럼이 있어야 합니다.")
                 else:
                     st.write(f"총 {len(df_new)}명 로드됨")
                     if st.button("데이터 병합하기", use_container_width=True):
-                        # 기존 컬럼 구조에 맞추기 (없는 컬럼은 기본값 채움)
                         for col in st.session_state.df.columns:
                             if col not in df_new.columns:
-                                # 날짜 컬럼은 None, 나머지는 False나 빈 문자열 등 기본값
                                 if "일" in col or "날짜" in col:
                                     df_new[col] = None
                                 elif "이수" in col or "여부" in col or "8H" in col or "4H" in col:
@@ -329,13 +335,11 @@ with st.sidebar:
                                 else:
                                     df_new[col] = None
                         
-                        # 날짜 변환 (엑셀 datetime -> date)
                         date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
                         for col in date_cols:
                             if col in df_new.columns:
                                 df_new[col] = pd.to_datetime(df_new[col], errors='coerce').dt.date
 
-                        # 필요한 컬럼만 선택해서 병합
                         df_new = df_new[st.session_state.df.columns]
                         st.session_state.df = pd.concat([st.session_state.df, df_new], ignore_index=True)
                         st.success("성공적으로 추가되었습니다!")
@@ -346,6 +350,7 @@ with st.sidebar:
     st.markdown("### 📝 근로자 명부 수정")
     st.caption("이름, 직책, 부서, 입사일 등 기본 정보만 여기서 수정하세요.")
     
+    # [수정] st.rerun() 제거하여 안정성 확보
     edited_df = st.data_editor(
         st.session_state.df,
         num_rows="dynamic",
@@ -439,6 +444,8 @@ with tab3:
         st.info(f"{selected_year}년도 입사자가 없습니다.")
     else:
         new_hire_view = add_numbering(new_hire_view)
+        
+        # [수정] st.rerun() 제거하여 안정성 확보
         edited_new_hires = st.data_editor(
             new_hire_view, key="editor_new_hire", use_container_width=True, hide_index=True,
             column_config={
@@ -455,13 +462,13 @@ with tab3:
                 "입사연도": None, "법적_신규자": None, "다음_직무교육일": None, "다음_특수검진일": None
             }
         )
+        # 변경 사항 반영
         if not new_hire_view.equals(edited_new_hires):
             for index, row in edited_new_hires.iterrows():
                 name = row['성명']
                 idx = st.session_state.df[st.session_state.df['성명'] == name].index
                 if not idx.empty:
                     st.session_state.df.loc[idx, '신규교육_이수'] = row['신규교육_이수']
-            st.rerun()
 
 with tab4:
     st.subheader("특별안전보건교육")
@@ -480,6 +487,8 @@ with tab4:
             "특별교육_과목1", "특별_1_이론_4H", "특별_1_실습_4H",
             "특별교육_과목2", "특별_2_이론_4H", "특별_2_실습_4H"
         ]
+        
+        # [수정] st.rerun() 제거하여 안정성 확보
         edited_special = st.data_editor(
             special_view, key="editor_special", use_container_width=True, hide_index=True, column_order=col_order,
             column_config={
@@ -506,7 +515,6 @@ with tab4:
                 idx = st.session_state.df[st.session_state.df['성명'] == name].index
                 if not idx.empty:
                     st.session_state.df.loc[idx, cols_check] = row[cols_check]
-            st.rerun()
 
 with tab5:
     st.subheader("특수건강검진")
@@ -527,6 +535,7 @@ with tab5:
         health_view['현재상태'] = health_view.apply(get_status_label, axis=1)
         health_view = add_numbering(health_view)
 
+        # [수정] st.rerun() 제거하여 안정성 확보
         edited_health = st.data_editor(
             health_view, key="editor_health", use_container_width=True, hide_index=True,
             column_config={
@@ -552,5 +561,3 @@ with tab5:
                 idx = st.session_state.df[st.session_state.df['성명'] == name].index
                 if not idx.empty:
                     st.session_state.df.loc[idx, cols_to_update] = row[cols_to_update]
-            st.rerun()
-
