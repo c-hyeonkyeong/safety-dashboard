@@ -22,8 +22,8 @@ try:
     # 만약 모르겠다면, 아래처럼 Streamlit 기능으로 추적할 수도 있지만,
     # 가장 확실한 건 직접 적는 것입니다. 아래 변수를 수정하세요!
     
-    # ▼▼▼ [수정 필요] 본인의 'GitHub아이디/저장소이름'으로 바꾸세요! ▼▼▼
-    REPO_KEY = "사용자ID/저장소이름" 
+    # ▼▼▼ [수정 완료] 사용자님의 저장소 정보입니다 ▼▼▼
+    REPO_KEY = "c-hyeonkyeong/safety-dashboard"
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     
     repo = g.get_repo(REPO_KEY)
@@ -150,3 +150,4 @@ df.loc[mask_m, '다음_직무교육일'] = df[mask_m]['최근_직무교육일'].
 st.divider()
 st.info("💡 데이터를 수정하고 왼쪽 사이드바의 **[GitHub에 저장하기]** 버튼을 누르면 자동 저장됩니다.")
 st.dataframe(df, use_container_width=True)
+
