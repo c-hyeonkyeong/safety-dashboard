@@ -95,10 +95,9 @@ with st.sidebar:
             contents = repo.get_contents(DATA_FILE)
             csv_string = contents.decoded_content.decode("utf-8")
             loaded_data = pd.read_csv(io.StringIO(csv_string))
-            # 불러올 때 날짜 변환
             for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
                 if col in loaded_data.columns:
-                    loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce')
+                    loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce').dt.date
         except: pass
         try:
             contents = repo.get_contents(CONFIG_FILE)
@@ -190,14 +189,13 @@ with st.sidebar:
         }
         st.session_state.df_final = pd.DataFrame(data)
 
-    # [오류 해결] 데이터 타입 강제 변환 (에러 발생 방지)
-    # 1. 날짜 컬럼을 datetime 형식으로 변환 (문자열 등이 섞여있으면 에러남)
+    # 데이터 타입 강제 변환 (날짜/시간 제거)
     date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
     for col in date_cols:
         if col in st.session_state.df_final.columns:
-            st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce')
+            st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce').dt.date
 
-    # 2. 체크박스용 컬럼을 boolean 형식으로 변환
+    # 체크박스용 컬럼 변환
     bool_cols = ['퇴사여부', '특수검진_대상']
     for col in bool_cols:
         if col not in st.session_state.df_final.columns:
@@ -231,7 +229,7 @@ with st.sidebar:
     st.markdown("##### 👥 명부 직접 수정")
     st.caption("특수검진 제외는 여기서 체크 해제")
     
-    # [수정된 부분] 날짜 컬럼 형식을 확실히 지정하여 에러 방지
+    # [수정 완료] 날짜 컬럼에 format 지정하여 달력만 나오게 설정
     edited_df = st.data_editor(
         st.session_state.df_final,
         num_rows="dynamic",
@@ -243,9 +241,10 @@ with st.sidebar:
             "성명": st.column_config.TextColumn("성명", width="medium"),
             "직책": st.column_config.SelectboxColumn("직책", options=ROLES, width="medium"),
             "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST, width="medium"),
-            "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-            "최근_직무교육일": st.column_config.DateColumn(),
-            "검진단계": None, "최근_특수검진일": None
+            "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"), # 달력만 표시
+            "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), # 달력만 표시
+            "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"), # 달력만 표시
+            "검진단계": None
         }
     )
     if not st.session_state.df_final.equals(edited_df):
@@ -259,10 +258,8 @@ with st.sidebar:
 df = st.session_state.df_final.copy()
 today = date.today()
 
-# 날짜 계산을 위해 dt.date로 변환
 for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
     if col in df.columns: 
-        # datetime으로 확실히 변환 후 .dt.date로 날짜 객체화
         df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
 
 df['특별교육_과목1'] = df['부서'].map(DEPT_S1).fillna("설정필요")
@@ -317,27 +314,39 @@ with tab1:
     target = dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])].copy()
     if not target.empty:
         target['상태'] = target.apply(lambda r: "🔴 초과" if pd.isna(r['다음_직무교육일']) or (r['다음_직무교육일']-today).days<0 else "🟢 양호", axis=1)
-        safe_update_simple(target[['성명','직책','최근_직무교육일','다음_직무교육일','상태']], "t1", {"다음_직무교육일": st.column_config.DateColumn()})
+        safe_update_simple(
+            target[['성명','직책','최근_직무교육일','다음_직무교육일','상태']], 
+            "t1", 
+            {"최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), "다음_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD")}
+        )
     else: st.info("대상자 없음")
 
 with tab2:
     target = dashboard_df[dashboard_df['직책'].astype(str).str.strip() == '폐기물담당자'].copy()
     if not target.empty:
         target['상태'] = target.apply(lambda r: "🔴 필요" if pd.isna(r['최근_직무교육일']) else ("🔴 초과" if (r['다음_직무교육일']-today).days<0 else "🟢 양호"), axis=1)
-        safe_update_simple(target[['성명','부서','최근_직무교육일','다음_직무교육일','상태']], "t2", {"다음_직무교육일": st.column_config.DateColumn()})
+        safe_update_simple(
+            target[['성명','부서','최근_직무교육일','다음_직무교육일','상태']], 
+            "t2", 
+            {"최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), "다음_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD")}
+        )
     else: st.info("대상자 없음")
 
 with tab3:
     years = [today.year, today.year-1, today.year-2]
     sel_y = st.radio("입사년도 선택", years, horizontal=True)
     target = dashboard_df[dashboard_df['입사연도'] == sel_y].copy()
-    safe_update_simple(target[['신규교육_이수','성명','입사일','부서']], "t3", {})
+    safe_update_simple(
+        target[['신규교육_이수','성명','입사일','부서']], 
+        "t3", 
+        {"입사일": st.column_config.DateColumn(format="YYYY-MM-DD")}
+    )
 
 with tab4:
     target = dashboard_df[dashboard_df['특별교육_과목1'] != '해당없음'].copy()
     safe_update_simple(target[['성명','부서','특별_공통_8H','특별교육_과목1','특별_1_이론_4H','특별_1_실습_4H']], "t4", {})
 
-# [탭 5] 특수건강검진 - 튕김 해결 및 계산 로직 적용
+# [탭 5] 특수건강검진
 with tab5:
     st.subheader("특수건강검진 현황")
     
@@ -353,18 +362,17 @@ with tab5:
             use_container_width=True,
             hide_index=True,
             column_config={
+                # [수정] format="YYYY-MM-DD" 추가로 달력만 표시
                 "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                "다음_특수검진일": st.column_config.DateColumn(disabled=True),
+                "다음_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD", disabled=True),
                 "상태": st.column_config.TextColumn(disabled=True),
                 "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES, required=True)
             }
         )
-        # 변경 감지 및 저장
         edited_target.index = target.index
         compare_cols = ['검진단계', '최근_특수검진일']
         
         if not target[compare_cols].equals(edited_target[compare_cols]):
             st.session_state.df_final.loc[target_indices, compare_cols] = edited_target[compare_cols]
-            # 강제 rerun 제거하여 튕김 현상 방지 (Streamlit이 알아서 반영함)
     else: 
         st.info("대상자가 없습니다. 왼쪽 사이드바 명부에서 검진대상을 체크해주세요.")
