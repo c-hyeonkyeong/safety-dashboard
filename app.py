@@ -5,108 +5,99 @@ from github import Github
 import io
 
 # --- [1. 시스템 설정] ---
-st.set_page_config(page_title="GitHub 연동 대시보드", layout="wide", page_icon="🐙")
-st.title("🐙 GitHub 저장소 연동 안전보건 시스템")
-st.caption("데이터를 저장하면 GitHub 저장소의 'data.csv' 파일이 자동으로 업데이트됩니다.")
+st.set_page_config(page_title="완성형 안전보건 대시보드", layout="wide", page_icon="🏗️")
 
-# --- [2. GitHub 연결 설정] ---
-# Streamlit Secrets에서 토큰을 가져옵니다.
-try:
-    token = st.secrets["GITHUB_TOKEN"]
-    g = Github(token)
-    
-    # 현재 리포지토리 정보를 가져오는 방법
-    # (주의: 본인의 '아이디/저장소이름'을 정확히 적어야 합니다!)
-    # 예: repo_name = "honggildong/safety-dashboard"
-    # 지금 배포된 앱의 URL이나 GitHub 주소를 확인해서 채워주세요.
-    # 만약 모르겠다면, 아래처럼 Streamlit 기능으로 추적할 수도 있지만,
-    # 가장 확실한 건 직접 적는 것입니다. 아래 변수를 수정하세요!
-    
-    # ▼▼▼ [수정 완료] 사용자님의 저장소 정보입니다 ▼▼▼
-    REPO_KEY = "c-hyeonkyeong/safety-dashboard"
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-    
-    repo = g.get_repo(REPO_KEY)
-except Exception as e:
-    st.error(f"GitHub 연결 실패: Secrets에 'GITHUB_TOKEN'이 설정되었는지, 리포지토리 이름이 맞는지 확인하세요.\n에러: {e}")
-    st.stop()
+st.markdown("""
+<style>
+    div[data-testid="stMetricValue"] {font-size: 20px;}
+</style>
+""", unsafe_allow_html=True)
 
-# --- [3. 데이터 불러오기 & 저장하기 함수] ---
-FILE_PATH = "data.csv"
+st.title("🏗️ 산업안전보건 통합 관리 시스템 (GitHub 연동)")
+st.caption("부서만 선택하면 [특별교육과목]과 [유해인자]가 자동으로 입력되며, GitHub에 데이터를 저장할 수 있습니다.")
 
-def load_data_from_github():
+# ==========================================
+# [GitHub 연동 설정 섹션]
+# ==========================================
+# 1. GitHub 토큰과 레포지토리 이름을 입력하세요. 
+# (보안을 위해 실제 배포 시에는 st.secrets를 사용하는 것이 좋습니다.)
+# 예: "ghp_xxxxxxxxxxxx"
+GITHUB_TOKEN = st.sidebar.text_input("🔑 GitHub 토큰 (Personal Access Token)", type="password")
+# 예: "username/repository_name"
+REPO_NAME = st.sidebar.text_input("📂 레포지토리 이름 (예: myid/safety-dashboard)")
+FILE_PATH = "data.csv" # 저장소 내 파일 경로
+
+def save_to_github(df_to_save):
+    if not GITHUB_TOKEN or not REPO_NAME:
+        st.sidebar.error("토큰과 레포지토리 이름을 입력해주세요.")
+        return
+    
     try:
-        # GitHub에서 파일 내용 가져오기
-        file_content = repo.get_contents(FILE_PATH)
-        decoded_content = file_content.decoded_content
-        # CSV 읽기
-        df = pd.read_csv(io.BytesIO(decoded_content))
-        # 날짜 변환
-        for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
-            if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
-        return df
-    except Exception as e:
-        # 파일이 없으면(처음 실행 시) None 반환
-        return None
-
-def save_data_to_github(df):
-    try:
+        g = Github(GITHUB_TOKEN)
+        repo = g.get_repo(REPO_NAME)
+        
         # 데이터프레임을 CSV 문자열로 변환
-        csv_buffer = io.StringIO()
-        df.to_csv(csv_buffer, index=False)
-        content = csv_buffer.getvalue()
-
+        csv_content = df_to_save.to_csv(index=False)
+        
         try:
-            # 파일이 이미 있으면 업데이트 (Update)
+            # 기존 파일이 있으면 가져와서 업데이트 (SHA 필요)
             contents = repo.get_contents(FILE_PATH)
-            repo.update_file(contents.path, "Update safety data via Streamlit", content, contents.sha)
-            st.toast("✅ GitHub에 저장 완료! (Update)", icon="🐙")
+            repo.update_file(FILE_PATH, f"Update data: {datetime.now()}", csv_content, contents.sha)
+            st.sidebar.success(f"✅ GitHub 저장 성공! ({datetime.now().strftime('%H:%M:%S')})")
         except:
-            # 파일이 없으면 새로 생성 (Create)
-            repo.create_file(FILE_PATH, "Initial data commit", content)
-            st.toast("✅ GitHub에 파일 생성 완료! (Create)", icon="🆕")
+            # 파일이 없으면 새로 생성
+            repo.create_file(FILE_PATH, "Initial commit", csv_content)
+            st.sidebar.success(f"✅ 새 파일 생성 완료! ({datetime.now().strftime('%H:%M:%S')})")
             
     except Exception as e:
-        st.error(f"저장 중 오류 발생: {e}")
+        st.sidebar.error(f"❌ 저장 실패: {e}")
 
-# --- [4. 초기 데이터 로드] ---
-if 'df' not in st.session_state:
-    with st.spinner("GitHub에서 데이터를 불러오는 중..."):
-        loaded_df = load_data_from_github()
+# ==========================================
+
+# --- [2. 사용자 설정 (관리자 메뉴) - 유해인자 컬럼 추가] ---
+with st.expander("⚙️ [관리자 메뉴] 부서별 교육 및 유해인자 매핑 설정", expanded=False):
+    if 'dept_config' not in st.session_state:
+        st.session_state.dept_config = pd.DataFrame({
+            '부서명': ['용접팀', '전기팀', '밀폐작업팀', '일반관리팀'],
+            '특별교육과목': ['아크용접 등 화기작업', '고압 전기 취급 작업', '밀폐공간 내부 작업', '해당없음'],
+            '유해인자': ['용접흄, 분진', '전류(감전)', '산소결핍', '없음']
+        })
+
+    st.info("👇 부서별로 [특별교육 과목]과 [유해인자]를 미리 정의해두세요.")
+    edited_dept_config = st.data_editor(st.session_state.dept_config, num_rows="dynamic", key="dept_editor", use_container_width=True)
     
-    if loaded_df is not None:
-        st.session_state.df = loaded_df
-    else:
-        # 파일이 없으면 기본 샘플 데이터 사용
-        st.warning("저장된 데이터가 없어 기본 샘플을 로드합니다. [저장하기]를 누르면 파일이 생성됩니다.")
-        data = {
-            '성명': ['김철수', '이영희', '박신규'],
-            '직책': ['안전보건관리책임자', '관리감독자', '신규채용자'],
-            '부서': ['일반관리팀', '일반관리팀', '용접팀'],
-            '입사일': [date(2022,1,1), date(2023,5,20), date.today()],
-            '최근_직무교육일': [date(2023,5,1), date(2024,5,20), None],
-            '검진단계': ['배치전(미실시)', '배치전(미실시)', '배치전(미실시)'],
-            '최근_특수검진일': [None, None, None]
-        }
-        st.session_state.df = pd.DataFrame(data)
+    DEPT_SUBJECT_MAP = dict(zip(edited_dept_config['부서명'], edited_dept_config['특별교육과목']))
+    DEPT_FACTOR_MAP = dict(zip(edited_dept_config['부서명'], edited_dept_config['유해인자']))
+    
+    DEPTS_LIST = list(DEPT_SUBJECT_MAP.keys())
 
-# --- [5. 사이드바 및 에디터] ---
-# 매핑 설정
-DEPT_SUBJECT_MAP = {'용접팀': '아크용접 등 화기작업', '전기팀': '고압 전기 취급 작업', '일반관리팀': '해당없음'}
-DEPT_FACTOR_MAP = {'용접팀': '용접흄, 분진', '전기팀': '전류(감전)', '일반관리팀': '없음'}
-DEPTS_LIST = list(DEPT_SUBJECT_MAP.keys())
+# --- [3. 메인 데이터 초기화] ---
 ROLES = ["안전보건관리책임자", "관리감독자", "폐기물담당자", "신규채용자", "일반근로자"]
 HEALTH_PHASES = ["배치전(미실시)", "1차검진 완료(다음:6개월)", "정기검진(다음:1년)"]
 
+if 'df' not in st.session_state:
+    # 초기 데모 데이터
+    data = {
+        '성명': ['김철수', '이영희', '박신규', '최신규', '정전기', '강폐기'],
+        '직책': ['안전보건관리책임자', '관리감독자', '일반근로자', '신규채용자', '일반근로자', '폐기물담당자'],
+        '부서': ['일반관리팀', '일반관리팀', '용접팀', '용접팀', '전기팀', '일반관리팀'],
+        '입사일': [date(2022, 1, 1), date(2023, 5, 20), date.today(), date(2020, 1, 1), date(2023, 6, 1), date(2020, 1, 1)],
+        '최근_직무교육일': [date(2023, 5, 1), date(2024, 5, 20), None, None, None, date(2022, 5, 1)],
+        '특별_공통8H': [False, False, False, False, True, False],
+        '특별_온라인4H': [False, False, False, False, False, False],
+        '특별_감독자4H': [False, False, False, False, False, False],
+        '검진단계': [
+            '배치전(미실시)', '배치전(미실시)', '배치전(미실시)', 
+            '배치전(미실시)', '1차검진 완료(다음:6개월)', '배치전(미실시)'
+        ], 
+        '최근_특수검진일': [None, None, None, None, date(2024, 12, 1), None]
+    }
+    st.session_state.df = pd.DataFrame(data)
+
+# --- [4. 데이터 입력 (사이드바)] ---
 with st.sidebar:
-    st.header("📝 데이터 관리")
-    
-    # 저장 버튼
-    if st.button("💾 GitHub에 저장하기", use_container_width=True, type="primary"):
-        save_data_to_github(st.session_state.df)
-        
-    st.divider()
+    st.header("📝 근로자 정보 관리")
+    st.warning("유해인자는 부서 선택 시 자동 반영됩니다.")
     
     edited_df = st.data_editor(
         st.session_state.df,
@@ -116,39 +107,119 @@ with st.sidebar:
         column_config={
             "성명": st.column_config.TextColumn("성명", required=True),
             "직책": st.column_config.SelectboxColumn("직책", options=ROLES),
-            "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST),
-            "입사일": st.column_config.DateColumn("입사일"),
+            "부서": st.column_config.SelectboxColumn("부서(자동매핑)", options=DEPTS_LIST),
+            "입사일": st.column_config.DateColumn("입사일", format="YYYY-MM-DD"),
             "최근_직무교육일": st.column_config.DateColumn("최근 직무교육일"),
-            "검진단계": st.column_config.SelectboxColumn("검진단계", options=HEALTH_PHASES),
+            "검진단계": st.column_config.SelectboxColumn("특수검진 진행상태", options=HEALTH_PHASES, required=True),
             "최근_특수검진일": st.column_config.DateColumn("최근 검진일"),
         }
     )
-    # 데이터 변경 즉시 반영
-    if not edited_df.equals(st.session_state.df):
-        st.session_state.df = edited_df
-        st.rerun()
+    # 편집된 데이터를 현재 세션 데이터로 사용
+    df = edited_df.copy()
+    
+    st.divider()
+    st.subheader("💾 데이터 저장")
+    if st.button("GitHub에 저장하기", type="primary"):
+        save_to_github(df)
 
-# --- [6. 로직 및 시각화] ---
-df = st.session_state.df.copy()
+# --- [5. 핵심 로직: 자동 매핑 & 주기 계산] ---
 today = date.today()
 
-# (기존 로직 동일)
 def add_days(d, days):
     if pd.isna(d) or d == "": return None
-    if isinstance(d, str): d = datetime.strptime(d, "%Y-%m-%d").date() 
     return d + timedelta(days=days)
 
+# 1. 신규자 판별
 df['입사일_dt'] = pd.to_datetime(df['입사일'], errors='coerce')
-df['신규자_여부'] = df.apply(lambda x: ((pd.Timestamp(today) - x['입사일_dt']).days < 90 if pd.notnull(x['입사일_dt']) else False) or (x['직책']=='신규채용자'), axis=1)
-df['특별교육_과목'] = df['부서'].map(DEPT_SUBJECT_MAP).fillna("-")
-df['유해인자'] = df['부서'].map(DEPT_FACTOR_MAP).fillna("-")
+df['신규자_여부'] = df.apply(
+    lambda x: (
+        (pd.Timestamp(today) - x['입사일_dt']).days < 90 if pd.notnull(x['입사일_dt']) else False
+    ) or (x['직책'] == '신규채용자'), 
+    axis=1
+)
 
+# 2. 부서 기반 자동 매핑
+df['특별교육_과목'] = df['부서'].map(DEPT_SUBJECT_MAP).fillna("설정필요")
+df['유해인자'] = df['부서'].map(DEPT_FACTOR_MAP).fillna("확인필요")
+
+# 3. 교육 주기 계산
 df['다음_직무교육일'] = None
-mask_m = df['직책'] == '안전보건관리책임자'
-df.loc[mask_m, '다음_직무교육일'] = df[mask_m]['최근_직무교육일'].apply(lambda x: add_days(x, 730))
+mask_manager = df['직책'] == '안전보건관리책임자'
+df.loc[mask_manager, '다음_직무교육일'] = df[mask_manager]['최근_직무교육일'].apply(lambda x: add_days(x, 730))
+mask_supervisor = df['직책'] == '관리감독자'
+df.loc[mask_supervisor, '다음_직무교육일'] = df[mask_supervisor]['최근_직무교육일'].apply(lambda x: add_days(x, 365))
 
-st.divider()
-st.info("💡 데이터를 수정하고 왼쪽 사이드바의 **[GitHub에 저장하기]** 버튼을 누르면 자동 저장됩니다.")
-st.dataframe(df, use_container_width=True)
+# 4. 특수검진 주기 계산
+def calc_next_health(row):
+    if row['유해인자'] in ['없음', 'None', '', None]: return None
+    status = row['검진단계']
+    if status == "배치전(미실시)": return None 
+    if pd.isna(row['최근_특수검진일']): return None
+    
+    cycle = 180 if status == "1차검진 완료(다음:6개월)" else 365
+    return row['최근_특수검진일'] + timedelta(days=cycle)
 
+df['다음_특수검진일'] = df.apply(calc_next_health, axis=1)
 
+# --- [6. 대시보드 탭 구성] ---
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 채용자", "⚠️ 특별교육", "🏥 특수건강검진"
+])
+
+with tab1:
+    st.subheader("안전보건관리책임자(2년) 및 관리감독자(1년)")
+    alert_manager = df[(df['직책'].isin(['안전보건관리책임자', '관리감독자'])) & (df['다음_직무교육일'] < today + timedelta(days=30))]
+    if not alert_manager.empty: st.error(f"🚨 기한 임박: {len(alert_manager)}명")
+    st.dataframe(df[df['직책'].isin(['안전보건관리책임자', '관리감독자'])][['성명', '직책', '최근_직무교육일', '다음_직무교육일']], use_container_width=True)
+
+with tab2:
+    st.subheader("폐기물 담당자")
+    st.dataframe(df[df['직책'] == '폐기물담당자'][['성명', '부서', '최근_직무교육일']], use_container_width=True)
+
+with tab3:
+    st.subheader("신규 채용자 (연도별)")
+    df['입사연도'] = pd.to_datetime(df['입사일']).dt.year
+    unique_years = sorted(df['입사연도'].dropna().unique().astype(int), reverse=True)
+    if unique_years:
+        selected_year = st.selectbox("조회 연도", unique_years)
+        new_hire_df = df[df['입사연도'] == selected_year]
+        st.dataframe(new_hire_df[['성명', '입사일', '부서', '직책']], use_container_width=True)
+
+with tab4:
+    st.subheader("특별안전보건교육 이수 현황")
+    st.info("💡 부서에 따라 교육 과목이 자동 지정됩니다.")
+    
+    special_target = df[df['특별교육_과목'] != '해당없음'].copy()
+    display_special = special_target[['성명', '부서', '특별교육_과목', '신규자_여부']].copy()
+    
+    display_special['공통(8H)'] = special_target.apply(
+        lambda x: "✅신규갈음" if x['신규자_여부'] else ("🟢이수" if x['특별_공통8H'] else "❌미이수"), axis=1
+    )
+    display_special['이론(4H)'] = special_target['특별_온라인4H'].apply(lambda x: "🟢이수" if x else "❌미이수")
+    display_special['실습(4H)'] = special_target['특별_감독자4H'].apply(lambda x: "🟢이수" if x else "❌미이수")
+    
+    def check_final(row):
+        common_ok = row['신규자_여부'] or row['특별_공통8H']
+        subject_ok = row['특별_온라인4H'] and row['특별_감독자4H']
+        return "🎉완료" if common_ok and subject_ok else "⚠️교육필요"
+        
+    display_special['최종상태'] = special_target.apply(check_final, axis=1)
+    st.dataframe(display_special, use_container_width=True)
+
+with tab5:
+    st.subheader("특수건강검진 (자동 유해인자 반영)")
+    st.caption("부서가 설정되면 유해인자가 자동으로 표기되며, 그에 따른 검진 상태를 보여줍니다.")
+    
+    health_target = df[(df['유해인자'].notna()) & (df['유해인자'] != '없음')].copy()
+    
+    def get_health_status(row):
+        if row['검진단계'] == "배치전(미실시)": return "🚨 배치 전 검진 필요"
+        if pd.isna(row['다음_특수검진일']): return "-"
+        days_left = (row['다음_특수검진일'] - today).days
+        if days_left < 0: return "❌ 기한 초과"
+        if days_left < 30: return "⚠️ 기한 임박"
+        return f"✅ 양호 ({days_left}일)"
+
+    health_target['상태'] = health_target.apply(get_health_status, axis=1)
+    
+    st.dataframe(health_target[['성명', '부서', '유해인자', '검진단계', '최근_특수검진일', '다음_특수검진일', '상태']], use_container_width=True)
