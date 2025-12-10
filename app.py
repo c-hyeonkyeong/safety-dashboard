@@ -44,30 +44,45 @@ def save_to_github(df_to_save):
 # --- [2. 사용자 설정 (관리자 메뉴)] ---
 with st.expander("⚙️ [관리자 메뉴] 부서별 교육 및 유해인자 매핑 설정", expanded=False):
     if 'dept_config' not in st.session_state:
+        # ★ [수정] '정렬순서' 컬럼 추가 (리스트 순서 제어용)
         st.session_state.dept_config = pd.DataFrame({
+            '정렬순서': [1, 2, 3, 4],
             '부서명': ['용접팀', '전기팀', '밀폐작업팀', '일반관리팀'],
             '특별교육과목': ['아크용접 등 화기작업', '고압 전기 취급 작업', '밀폐공간 내부 작업', '해당없음'],
             '유해인자': ['용접흄, 분진', '전류(감전)', '산소결핍', '없음']
         })
 
-    edited_dept_config = st.data_editor(st.session_state.dept_config, num_rows="dynamic", key="dept_editor", use_container_width=True)
+    st.info("👇 '정렬순서' 숫자를 변경하면 부서 목록 순서가 바뀝니다.")
     
-    DEPT_SUBJECT_MAP = dict(zip(edited_dept_config['부서명'], edited_dept_config['특별교육과목']))
-    DEPT_FACTOR_MAP = dict(zip(edited_dept_config['부서명'], edited_dept_config['유해인자']))
-    DEPTS_LIST = list(DEPT_SUBJECT_MAP.keys())
+    edited_dept_config = st.data_editor(
+        st.session_state.dept_config, 
+        num_rows="dynamic", 
+        key="dept_editor", 
+        use_container_width=True,
+        column_config={
+            "정렬순서": st.column_config.NumberColumn("순서", help="낮은 숫자가 먼저 나옵니다.", format="%d"),
+        }
+    )
+    
+    # ★ [수정] 정렬순서 기준으로 데이터프레임 정렬
+    sorted_dept_config = edited_dept_config.sort_values(by='정렬순서')
+    
+    DEPT_SUBJECT_MAP = dict(zip(sorted_dept_config['부서명'], sorted_dept_config['특별교육과목']))
+    DEPT_FACTOR_MAP = dict(zip(sorted_dept_config['부서명'], sorted_dept_config['유해인자']))
+    
+    # 정렬된 순서대로 부서 리스트 생성
+    DEPTS_LIST = list(sorted_dept_config['부서명'])
 
 # --- [3. 메인 데이터 초기화] ---
 ROLES = ["안전보건관리책임자", "관리감독자", "폐기물담당자", "일반근로자"]
 HEALTH_PHASES = ["배치전(미실시)", "1차검진 완료(다음:6개월)", "정기검진(다음:1년)"]
 
-# 초기 데이터 로드 (또는 세션 상태 유지)
 if 'df' not in st.session_state:
     data = {
         '성명': ['김철수', '이영희', '박신규', '최신규', '정전기', '강폐기'],
         '직책': ['안전보건관리책임자', '관리감독자', '일반근로자', '일반근로자', '일반근로자', '폐기물담당자'],
         '부서': ['일반관리팀', '일반관리팀', '용접팀', '용접팀', '전기팀', '일반관리팀'],
         '입사일': [date(2022, 1, 1), date(2023, 5, 20), date.today(), date(2020, 1, 1), date(2023, 6, 1), date(2020, 1, 1)],
-        # 여기에 퇴사여부가 없어도 아래에서 자동으로 추가되게 로직 보완함
         '최근_직무교육일': [date(2023, 5, 1), date(2024, 5, 20), None, None, None, date(2022, 5, 1)],
         '특별_공통8H': [False, False, False, False, True, False],
         '특별_온라인4H': [False, False, False, False, False, False],
@@ -80,7 +95,6 @@ if 'df' not in st.session_state:
     }
     st.session_state.df = pd.DataFrame(data)
 
-# ★ [중요] 기존 데이터에 '퇴사여부' 컬럼이 없으면 에러가 나므로, 강제로 만들어주는 안전장치
 if '퇴사여부' not in st.session_state.df.columns:
     st.session_state.df['퇴사여부'] = False
 
@@ -107,7 +121,6 @@ with st.sidebar:
     )
     df = edited_df.copy()
     
-    # 여기서도 한 번 더 체크 (편집 중 컬럼이 사라지는 경우 대비)
     if '퇴사여부' not in df.columns:
         df['퇴사여부'] = False
     
@@ -130,7 +143,7 @@ def add_days(d, days):
 df['입사일_dt'] = pd.to_datetime(df['입사일'], errors='coerce')
 df['입사연도'] = df['입사일_dt'].dt.year
 
-# 신규자 여부 (법적 기준 90일 이내 입사자 판단용)
+# 신규자 여부
 df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
 
 # 직무교육 주기
@@ -151,8 +164,7 @@ def calc_next_health(row):
 
 df['다음_특수검진일'] = df.apply(calc_next_health, axis=1)
 
-# ★ [중요] 대시보드용 데이터 생성 (퇴사자 제외)
-# 이제 위에서 강제로 '퇴사여부' 컬럼을 만들었기 때문에 여기서 에러가 나지 않습니다.
+# ★ 대시보드용 데이터 생성 (퇴사자 제외)
 dashboard_df = df[df['퇴사여부'] == False].copy()
 
 # --- [6. 대시보드 탭 구성] ---
@@ -162,7 +174,6 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 with tab1:
     st.subheader("안전보건관리책임자 및 관리감독자")
-    # 퇴사자가 아닌 사람 중에서 필터링
     target = dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])]
     
     alert_manager = target[target['다음_직무교육일'] < today + timedelta(days=30)]
@@ -183,7 +194,6 @@ with tab3:
     
     selected_year = st.selectbox("입사 연도 선택", recent_years)
     
-    # 선택된 연도에 입사한 사람만 필터링 (퇴사자 이미 제외됨)
     new_hire_df = dashboard_df[dashboard_df['입사연도'] == selected_year]
     
     if new_hire_df.empty:
@@ -194,8 +204,6 @@ with tab3:
 with tab4:
     st.subheader("특별안전보건교육 이수 현황")
     
-    # 요청사항: 특별교육과목이 있는 부서(사람)만 표시
-    # '해당없음'이 아닌 사람만 필터링
     special_target = dashboard_df[dashboard_df['특별교육_과목'] != '해당없음'].copy()
     
     if special_target.empty:
@@ -220,8 +228,6 @@ with tab4:
 with tab5:
     st.subheader("특수건강검진 대상자")
     
-    # 요청사항: 유해인자가 있는 부서(사람)만 표시
-    # '없음'이 아닌 사람만 필터링
     health_target = dashboard_df[(dashboard_df['유해인자'].notna()) & (dashboard_df['유해인자'] != '없음')].copy()
     
     if health_target.empty:
