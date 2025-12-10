@@ -126,13 +126,9 @@ for col in ['정렬순서', '부서명', '특별교육과목1', '특별교육과
         else:
             st.session_state.dept_config[col] = '해당없음'
 
-# 드롭다운 옵션 정의
+# 드롭다운 옵션 정의 (여기에 없는 값이 데이터에 있으면 에러 발생)
 SPECIAL_EDU_OPTIONS = [
     "해당없음",
-    "아크용접 등 화기작업", 
-    "고압 전기 취급 작업", 
-    "밀폐공간 내부 작업", 
-    "그라인더 작업",
     "4. 폭발성·물반응성·자기반응성·자기발열성 물질, 자연발화성 액체·고체 및 인화성 액체의 제조 또는 취급작업",
     "35. 허가 및 관리 대상 유해물질의 제조 또는 취급작업"
 ]
@@ -177,10 +173,16 @@ with st.expander("🛠️ [관리자 설정] 부서 순서 및 교육 매핑", e
     st.markdown("#### 📝 매핑 상세 설정")
     sorted_df = st.session_state.dept_config.sort_values('정렬순서')
     
-    # [핵심 수정] SelectboxColumn 사용 시 에러 방지를 위해 문자열 타입으로 강제 변환
-    sorted_df['특별교육과목1'] = sorted_df['특별교육과목1'].astype(str)
-    sorted_df['특별교육과목2'] = sorted_df['특별교육과목2'].astype(str)
-    
+    # [데이터 정합성 검사]
+    # 데이터프레임의 값이 SPECIAL_EDU_OPTIONS 목록에 없으면 에러가 납니다.
+    # 따라서 목록에 없는 이상한 값(None, nan 등)은 '해당없음'으로 강제 치환합니다.
+    for col in ['특별교육과목1', '특별교육과목2']:
+        sorted_df[col] = sorted_df[col].astype(str) # 일단 문자열로 변환
+        # 옵션 리스트에 없는 값 찾기
+        mask = ~sorted_df[col].isin(SPECIAL_EDU_OPTIONS)
+        if mask.any():
+            sorted_df.loc[mask, col] = "해당없음"
+
     edited_dept_config = st.data_editor(
         sorted_df,
         num_rows="dynamic", 
