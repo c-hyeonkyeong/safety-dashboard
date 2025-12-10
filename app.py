@@ -41,19 +41,25 @@ def save_to_github(df_to_save):
     except Exception as e:
         st.sidebar.error(f"❌ 저장 실패: {e}")
 
-# --- [2. 사용자 설정 (관리자 메뉴)] ---
+# --- [2. 사용자 설정 (관리자 메뉴) - 안전장치 추가됨] ---
 with st.expander("⚙️ [관리자 메뉴] 부서별 교육 및 유해인자 매핑 설정", expanded=False):
+    # 1. 초기 데이터 생성
     if 'dept_config' not in st.session_state:
-        # ★ [수정] '정렬순서' 컬럼 추가 (리스트 순서 제어용)
         st.session_state.dept_config = pd.DataFrame({
             '정렬순서': [1, 2, 3, 4],
             '부서명': ['용접팀', '전기팀', '밀폐작업팀', '일반관리팀'],
             '특별교육과목': ['아크용접 등 화기작업', '고압 전기 취급 작업', '밀폐공간 내부 작업', '해당없음'],
             '유해인자': ['용접흄, 분진', '전류(감전)', '산소결핍', '없음']
         })
+    
+    # ★ [에러 방지 핵심 코드] 기존 데이터에 '정렬순서'가 없으면 자동으로 만들어줌
+    if '정렬순서' not in st.session_state.dept_config.columns:
+        # 1부터 시작하는 순서 번호 자동 부여
+        st.session_state.dept_config.insert(0, '정렬순서', range(1, len(st.session_state.dept_config) + 1))
 
     st.info("👇 '정렬순서' 숫자를 변경하면 부서 목록 순서가 바뀝니다.")
     
+    # 데이터 에디터 표시
     edited_dept_config = st.data_editor(
         st.session_state.dept_config, 
         num_rows="dynamic", 
@@ -64,16 +70,20 @@ with st.expander("⚙️ [관리자 메뉴] 부서별 교육 및 유해인자 �
         }
     )
     
-    # ★ [수정] 정렬순서 기준으로 데이터프레임 정렬
-    sorted_dept_config = edited_dept_config.sort_values(by='정렬순서')
-    
+    # ★ 정렬 로직: 사용자가 입력한 순서대로 정렬
+    # 에러 방지를 위해 컬럼 존재 여부 한 번 더 확인
+    if '정렬순서' in edited_dept_config.columns:
+        sorted_dept_config = edited_dept_config.sort_values(by='정렬순서')
+    else:
+        sorted_dept_config = edited_dept_config
+
     DEPT_SUBJECT_MAP = dict(zip(sorted_dept_config['부서명'], sorted_dept_config['특별교육과목']))
     DEPT_FACTOR_MAP = dict(zip(sorted_dept_config['부서명'], sorted_dept_config['유해인자']))
     
     # 정렬된 순서대로 부서 리스트 생성
     DEPTS_LIST = list(sorted_dept_config['부서명'])
 
-# --- [3. 메인 데이터 초기화] ---
+# --- [3. 메인 데이터 초기화 - 안전장치 추가됨] ---
 ROLES = ["안전보건관리책임자", "관리감독자", "폐기물담당자", "일반근로자"]
 HEALTH_PHASES = ["배치전(미실시)", "1차검진 완료(다음:6개월)", "정기검진(다음:1년)"]
 
@@ -95,6 +105,7 @@ if 'df' not in st.session_state:
     }
     st.session_state.df = pd.DataFrame(data)
 
+# ★ [에러 방지 핵심 코드] 기존 데이터에 '퇴사여부'가 없으면 자동으로 만들어줌
 if '퇴사여부' not in st.session_state.df.columns:
     st.session_state.df['퇴사여부'] = False
 
@@ -121,6 +132,7 @@ with st.sidebar:
     )
     df = edited_df.copy()
     
+    # 편집 도중 컬럼이 사라지는 만약의 경우를 대비한 안전장치
     if '퇴사여부' not in df.columns:
         df['퇴사여부'] = False
     
