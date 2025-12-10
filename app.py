@@ -14,14 +14,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🏗️ 산업안전보건 통합 관리 시스템")
-st.caption("퇴사자는 체크 시 대시보드에서 제외되며, 신규 입사자는 입사일 기준으로 자동 분류됩니다.")
+st.caption("근로자 데이터와 관리자 설정(부서 규칙)이 모두 GitHub에 저장됩니다.")
 
 # ==========================================
 # [GitHub 연동 설정]
 # ==========================================
 GITHUB_TOKEN = st.sidebar.text_input("🔑 GitHub 토큰", type="password")
 REPO_NAME = st.sidebar.text_input("📂 레포지토리 (user/repo)")
-FILE_PATH = "data.csv"
+DATA_FILE = "data.csv"   # 근로자 데이터 파일
+CONFIG_FILE = "config.csv" # 관리자 설정 파일
 
 def get_github_repo():
     if not GITHUB_TOKEN or not REPO_NAME:
@@ -34,46 +35,68 @@ def get_github_repo():
         st.sidebar.error(f"GitHub 연결 실패: {e}")
         return None
 
-def save_to_github(df_to_save):
+# ★ [업그레이드] 데이터와 설정을 동시에 저장하는 함수
+def save_all_to_github(data_df, config_df):
     repo = get_github_repo()
     if not repo: return
     
     try:
-        csv_content = df_to_save.to_csv(index=False)
+        # 1. 근로자 데이터 저장
+        data_content = data_df.to_csv(index=False)
         try:
-            contents = repo.get_contents(FILE_PATH)
-            repo.update_file(FILE_PATH, f"Update data: {datetime.now()}", csv_content, contents.sha)
-            st.sidebar.success("✅ 저장 완료!")
+            contents = repo.get_contents(DATA_FILE)
+            repo.update_file(DATA_FILE, f"Update data: {datetime.now()}", data_content, contents.sha)
         except:
-            repo.create_file(FILE_PATH, "Initial commit", csv_content)
-            st.sidebar.success("✅ 새 파일 생성 완료!")
-    except Exception as e:
-        st.sidebar.error(f"❌ 저장 실패: {e}")
+            repo.create_file(DATA_FILE, "Init data", data_content)
+            
+        # 2. 관리자 설정 저장 (여기가 추가됨!)
+        config_content = config_df.to_csv(index=False)
+        try:
+            contents = repo.get_contents(CONFIG_FILE)
+            repo.update_file(CONFIG_FILE, f"Update config: {datetime.now()}", config_content, contents.sha)
+        except:
+            repo.create_file(CONFIG_FILE, "Init config", config_content)
 
-# ★ [신규 기능] 데이터 불러오기 함수
-def load_from_github():
-    repo = get_github_repo()
-    if not repo: return None
-    
-    try:
-        contents = repo.get_contents(FILE_PATH)
-        csv_string = contents.decoded_content.decode("utf-8")
-        loaded_df = pd.read_csv(io.StringIO(csv_string))
+        st.sidebar.success(f"✅ 모든 데이터 저장 완료! ({datetime.now().strftime('%H:%M:%S')})")
         
-        # 날짜 컬럼들을 문자열 -> 날짜 객체로 변환 (중요!)
+    except Exception as e:
+        st.sidebar.error(f"❌ 저장 중 오류 발생: {e}")
+
+# ★ [업그레이드] 데이터와 설정을 동시에 불러오는 함수
+def load_all_from_github():
+    repo = get_github_repo()
+    if not repo: return None, None
+    
+    loaded_data = None
+    loaded_config = None
+    
+    # 1. 근로자 데이터 로드
+    try:
+        contents = repo.get_contents(DATA_FILE)
+        csv_string = contents.decoded_content.decode("utf-8")
+        loaded_data = pd.read_csv(io.StringIO(csv_string))
+        # 날짜 변환
         date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
         for col in date_cols:
-            if col in loaded_df.columns:
-                loaded_df[col] = pd.to_datetime(loaded_df[col], errors='coerce').dt.date
-        
-        st.sidebar.success("📂 불러오기 성공!")
-        return loaded_df
-    except Exception as e:
-        st.sidebar.error(f"불러오기 실패 (파일이 없거나 오류): {e}")
-        return None
+            if col in loaded_data.columns:
+                loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce').dt.date
+    except:
+        st.sidebar.warning("⚠️ 저장된 근로자 데이터가 없습니다.")
 
-# --- [2. 사용자 설정 (관리자 메뉴) - 안전장치 포함] ---
+    # 2. 관리자 설정 로드
+    try:
+        contents = repo.get_contents(CONFIG_FILE)
+        csv_string = contents.decoded_content.decode("utf-8")
+        loaded_config = pd.read_csv(io.StringIO(csv_string))
+    except:
+        st.sidebar.warning("⚠️ 저장된 관리자 설정이 없습니다.")
+        
+    st.sidebar.success("📂 불러오기 시도 완료!")
+    return loaded_data, loaded_config
+
+# --- [2. 사용자 설정 (관리자 메뉴)] ---
 with st.expander("⚙️ [관리자 메뉴] 부서별 교육 및 유해인자 매핑 설정", expanded=False):
+    # 초기값 설정 (불러온 데이터가 없으면 기본값 사용)
     if 'dept_config' not in st.session_state:
         st.session_state.dept_config = pd.DataFrame({
             '정렬순서': [1, 2, 3, 4],
@@ -82,9 +105,12 @@ with st.expander("⚙️ [관리자 메뉴] 부서별 교육 및 유해인자 �
             '유해인자': ['용접흄, 분진', '전류(감전)', '산소결핍', '없음']
         })
     
+    # 안전장치: 컬럼 누락 방지
     if '정렬순서' not in st.session_state.dept_config.columns:
         st.session_state.dept_config.insert(0, '정렬순서', range(1, len(st.session_state.dept_config) + 1))
 
+    st.info("👇 여기서 수정한 내용도 'GitHub에 저장' 버튼을 누르면 함께 저장됩니다.")
+    
     edited_dept_config = st.data_editor(
         st.session_state.dept_config, 
         num_rows="dynamic", 
@@ -95,6 +121,10 @@ with st.expander("⚙️ [관리자 메뉴] 부서별 교육 및 유해인자 �
         }
     )
     
+    # 수정된 내용을 세션에 즉시 반영 (저장 버튼 누를 때 최신본이 저장되도록)
+    st.session_state.dept_config = edited_dept_config
+
+    # 정렬 및 매핑 로직
     if '정렬순서' in edited_dept_config.columns:
         sorted_dept_config = edited_dept_config.sort_values(by='정렬순서')
     else:
@@ -109,7 +139,7 @@ ROLES = ["안전보건관리책임자", "관리감독자", "폐기물담당자",
 HEALTH_PHASES = ["배치전(미실시)", "1차검진 완료(다음:6개월)", "정기검진(다음:1년)"]
 
 if 'df' not in st.session_state:
-    # 기본 데이터 (불러오기 실패 시 사용)
+    # 기본 데모 데이터
     data = {
         '성명': ['김철수', '이영희', '박신규', '최신규', '정전기', '강폐기'],
         '직책': ['안전보건관리책임자', '관리감독자', '일반근로자', '일반근로자', '일반근로자', '폐기물담당자'],
@@ -138,13 +168,20 @@ with st.sidebar:
     col1, col2 = st.columns(2)
     with col1:
         if st.button("📂 불러오기"):
-            loaded_data = load_from_github()
+            # 데이터와 설정 모두 불러옴
+            loaded_data, loaded_config = load_all_from_github()
+            
             if loaded_data is not None:
                 st.session_state.df = loaded_data
-                st.rerun() # 데이터 갱신 후 새로고침
+            if loaded_config is not None:
+                st.session_state.dept_config = loaded_config
+                
+            st.rerun() # 새로고침하여 화면 갱신
+            
     with col2:
         if st.button("GitHub에 저장", type="primary"):
-            save_to_github(st.session_state.df)
+            # 데이터와 설정 모두 저장
+            save_all_to_github(st.session_state.df, st.session_state.dept_config)
             
     st.divider()
     
