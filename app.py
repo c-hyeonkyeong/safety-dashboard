@@ -139,7 +139,7 @@ with st.sidebar:
             date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
             for col in date_cols:
                 if col in loaded_data.columns:
-                    loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce')
+                    loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce').dt.date
             
             if '검진단계' not in loaded_data.columns: loaded_data['검진단계'] = "배치전(미실시)"
             else: loaded_data['검진단계'] = loaded_data['검진단계'].fillna("배치전(미실시)")
@@ -325,7 +325,6 @@ def add_days(d, days):
 
 df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce')
 df['입사연도'] = df['입사일_dt'].dt.year
-# 법적 신규자 기준 (90일)
 df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
 
 df['다음_직무교육일'] = df.apply(calculate_job_training_date, axis=1)
@@ -338,13 +337,33 @@ def calc_next_health(row):
 
 df['다음_특수검진일'] = df.apply(calc_next_health, axis=1)
 
-# [수정] 대시보드 인원 통계 분리
-# 1. '조회 인원'은 퇴사자 제외 (현재 재직자)
-active_df = df[df['퇴사여부'] == False]
+# [복구] 필터링 기능 (데이터 준비 후 적용)
+with st.expander("🔍 데이터 필터링 (이름/부서/직책 검색)", expanded=False):
+    c1, c2, c3 = st.columns(3)
+    search_name = c1.text_input("이름 검색 (엔터)")
+    
+    all_depts = sorted(df['부서'].dropna().unique())
+    all_roles = sorted(df['직책'].dropna().unique())
+    
+    search_dept = c2.multiselect("부서 선택", options=all_depts)
+    search_role = c3.multiselect("직책 선택", options=all_roles)
 
-# 2. '신규 입사자'는 올해 입사자 전체 (퇴사자 포함, 교육 누락 방지)
-this_year_hires_count = len(df[df['입사연도'] == today.year])
+# 필터링 적용 (view_df는 필터가 적용된 전체 데이터)
+view_df = df.copy()
+if search_name:
+    view_df = view_df[view_df['성명'].astype(str).str.contains(search_name)]
+if search_dept:
+    view_df = view_df[view_df['부서'].isin(search_dept)]
+if search_role:
+    view_df = view_df[view_df['직책'].isin(search_role)]
 
+# 재직자용 데이터 (조회인원 카운트용)
+active_df = view_df[view_df['퇴사여부'] == False]
+
+# 신규 입사자 수 (올해 입사자, 퇴사자 포함, 필터 적용)
+this_year_hires_count = len(view_df[view_df['입사연도'] == today.year])
+
+# 2. 대시보드 출력
 col1, col2, col3, col4 = st.columns(4)
 with col1: st.metric("👥 조회 인원(재직)", f"{len(active_df)}명")
 with col2: st.metric("🌱 올해 신규 입사자", f"{this_year_hires_count}명")
@@ -356,9 +375,7 @@ st.divider()
 # 3. 탭 구성
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 입사자", "⚠️ 특별교육", "🏥 특수건강검진"])
 
-# [탭 1, 2, 4, 5]는 재직자 기준 (active_df) 사용
-# [탭 3 신규입사자]는 전체 기준 (df) 사용
-
+# [탭 1, 2, 4, 5]는 active_df(재직자) 사용
 with tab1:
     st.subheader("안전보건관리책임자 (2년) / 관리감독자 (1년)")
     mask_mgr = active_df['직책'].astype(str).str.replace(" ", "").str.contains("책임자|감독자", na=False)
@@ -409,14 +426,13 @@ with tab2:
             st.rerun()
     else: st.info("대상자 없음")
 
-# [수정] 신규 입사자 탭은 '전체 데이터(df)' 사용 -> 퇴사자도 보이게 함
+# [탭 3] 신규 입사자는 view_df(퇴사자 포함) 사용
 with tab3:
     years = [today.year, today.year-1, today.year-2]
     sel_y = st.radio("입사년도 선택", years, horizontal=True)
     
-    # 여기서는 active_df가 아니라 df를 사용
-    target_indices = df[df['입사연도'] == sel_y].index
-    target = df.loc[target_indices].copy()
+    target_indices = view_df[view_df['입사연도'] == sel_y].index
+    target = view_df.loc[target_indices].copy()
     
     if not target.empty:
         edited_target = st.data_editor(
@@ -440,6 +456,7 @@ with tab3:
 with tab4:
     st.subheader("특별안전보건교육 이수 관리")
     
+    # active_df 사용 (퇴사자 제외)
     target_indices = active_df[
         (active_df['특별교육_과목1'] != '해당없음') & 
         (active_df['특수검진_대상'] == True)
@@ -476,6 +493,7 @@ with tab4:
 with tab5:
     st.subheader("특수건강검진 현황")
     
+    # active_df 사용 (퇴사자 제외)
     target_indices = active_df[active_df['특수검진_대상'] == True].index
     target = active_df.loc[target_indices].copy()
     
