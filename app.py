@@ -7,7 +7,7 @@ import io
 # --- [1. 시스템 설정] ---
 st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️")
 
-# CSS
+# CSS: 사이드바 폭 조정 및 스타일
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
@@ -20,10 +20,8 @@ st.title("🛡️ 산업안전보건 통합 관리 시스템")
 st.markdown("---")
 
 # ==========================================
-# [0. 초기 설정 및 데이터 초기화 (순서 중요)]
+# [0. 초기 설정 및 공통 함수 (가장 먼저 정의)]
 # ==========================================
-# 데이터프레임을 먼저 만들어야 드롭다운 옵션을 뽑을 수 있음
-
 SPECIAL_EDU_OPTIONS = [
     "해당없음",
     "4. 폭발성·물반응성·자기반응성·자기발열성 물질, 자연발화성 액체·고체 및 인화성 액체의 제조 또는 취급작업",
@@ -47,6 +45,47 @@ def sanitize_config_df(df):
     if '유해인자' not in df.columns: df['유해인자'] = "없음"
     else: df['유해인자'] = df['유해인자'].fillna("없음")
     return df
+
+# [핵심 1] 날짜 더하기 함수 (전역)
+def add_days(d, days):
+    try: 
+        if pd.isna(d) or str(d) == "NaT" or str(d).strip() == "": return None
+        if isinstance(d, str): d = pd.to_datetime(d).date()
+        if isinstance(d, datetime): d = d.date()
+        return d + timedelta(days=days)
+    except: return None
+
+# [핵심 2] 직무교육 계산 함수 (전역으로 이동)
+def calculate_job_training_date(row):
+    last_date = row.get('최근_직무교육일')
+    
+    if pd.isna(last_date) or str(last_date) == 'NaT' or str(last_date).strip() == "":
+        return None
+    
+    # 타입 보장
+    if not isinstance(last_date, pd.Timestamp):
+        try: last_date = pd.to_datetime(last_date)
+        except: return None
+            
+    role = str(row.get('직책', '')).replace(" ", "").strip()
+    try:
+        if '책임자' in role: return last_date + timedelta(days=730)
+        elif '폐기물' in role: return last_date + timedelta(days=1095)
+        elif '감독자' in role: return last_date + timedelta(days=365)
+        else: return None
+    except: return None
+
+# [핵심 3] D-Day 상태 표시 함수 (전역)
+def get_dday_status(target_date):
+    if pd.isna(target_date) or str(target_date) == 'NaT' or str(target_date).strip() == "": return "-"
+    try:
+        target_ts = pd.to_datetime(target_date)
+        today_ts = pd.Timestamp(date.today())
+        diff = (target_ts - today_ts).days
+        if diff < 0: return "🔴 초과"
+        elif diff < 30: return "🟡 임박"
+        else: return "🟢 양호"
+    except: return "-"
 
 # 1. 근로자 명부 초기화 (df_final)
 if 'df_final' not in st.session_state:
@@ -93,14 +132,12 @@ if 'dept_config_final' not in st.session_state:
     })
 st.session_state.dept_config_final = sanitize_config_df(st.session_state.dept_config_final)
 
-# [핵심] 관리감독자 명단 실시간 추출 (드롭다운용)
-# 직책에 '관리감독자'가 포함된 사람의 이름을 리스트로 만듦
+# 관리감독자 명단 추출 (드롭다운용)
 supervisor_list = sorted(
     st.session_state.df_final[
-        st.session_state.df_final['직책'].astype(str).str.contains("관리감독자")
-    ]['성명'].unique().tolist()
+        st.session_state.df_final['직책'].astype(str).str.contains("관리감독자", na=False)
+    ]['성명'].dropna().unique().tolist()
 )
-# 선택 안함 옵션 추가
 if "-" not in supervisor_list:
     supervisor_list.insert(0, "-")
 
@@ -204,7 +241,7 @@ with st.sidebar:
     st.divider()
 
     # -----------------------------------------------
-    # 1. 부서 및 교육 매핑 설정 (드롭다운 적용)
+    # 1. 부서 및 교육 매핑 설정
     # -----------------------------------------------
     with st.expander("🛠️ 부서 및 교육 매핑 설정", expanded=False):
         dept_file = st.file_uploader("설정 파일 (xlsx/csv)", type=['csv', 'xlsx'], key="dept_up")
@@ -232,7 +269,6 @@ with st.sidebar:
             sorted_df, num_rows="dynamic", key="dept_editor_sidebar", use_container_width=True, hide_index=True,
             column_config={
                 "부서명": st.column_config.TextColumn("부서명"),
-                # [수정] 여기가 핵심: 관리감독자 명단을 옵션으로 제공
                 "담당관리감독자": st.column_config.SelectboxColumn("담당 관리감독자", options=supervisor_list, width="medium"),
                 "특별교육과목1": st.column_config.SelectboxColumn("특별교육 1", width="medium", options=SPECIAL_EDU_OPTIONS),
                 "특별교육과목2": st.column_config.SelectboxColumn("특별교육 2", width="medium", options=SPECIAL_EDU_OPTIONS),
@@ -245,7 +281,6 @@ with st.sidebar:
     DEPT_S1 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목1']))
     DEPT_S2 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목2']))
     DEPT_FAC = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['유해인자']))
-    # 매핑용 딕셔너리
     DEPT_SUP = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['담당관리감독자']))
     DEPTS_LIST = list(st.session_state.dept_config_final['부서명'])
 
@@ -313,22 +348,16 @@ for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
 df['특별교육_과목1'] = df['부서'].map(DEPT_S1).fillna("설정필요")
 df['특별교육_과목2'] = df['부서'].map(DEPT_S2).fillna("해당없음")
 df['유해인자'] = df['부서'].map(DEPT_FAC).fillna("없음")
-# [수정] 담당 관리감독자 자동 매핑
 df['담당관리감독자'] = df['부서'].map(DEPT_SUP).fillna("-")
 
 mask_no_factor = df['유해인자'].isin(['없음', '', '해당없음'])
 df.loc[mask_no_factor, '특수검진_대상'] = False
 
-def add_days(d, days):
-    try: 
-        if pd.isna(d): return None
-        return d + timedelta(days=days)
-    except: return None
-
 df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce')
 df['입사연도'] = df['입사일_dt'].dt.year
 df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
 
+# [함수 사용] 직무교육일 계산
 df['다음_직무교육일'] = df.apply(calculate_job_training_date, axis=1)
 
 def calc_next_health(row):
