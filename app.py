@@ -38,6 +38,13 @@ def sanitize_config_df(df):
     for col in target_cols:
         df[col] = df[col].astype(str).str.strip()
         df[col] = df[col].apply(lambda x: x if x in SPECIAL_EDU_OPTIONS else "해당없음")
+    
+    # [수정] 담당관리감독자 컬럼 추가 보장
+    if '담당관리감독자' not in df.columns:
+        df['담당관리감독자'] = ""
+    else:
+        df['담당관리감독자'] = df['담당관리감독자'].fillna("")
+
     if '유해인자' not in df.columns: df['유해인자'] = "없음"
     else: df['유해인자'] = df['유해인자'].fillna("없음")
     return df
@@ -139,7 +146,7 @@ with st.sidebar:
             date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
             for col in date_cols:
                 if col in loaded_data.columns:
-                    loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce').dt.date
+                    loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce')
             
             if '검진단계' not in loaded_data.columns: loaded_data['검진단계'] = "배치전(미실시)"
             else: loaded_data['검진단계'] = loaded_data['검진단계'].fillna("배치전(미실시)")
@@ -177,7 +184,8 @@ with st.sidebar:
             '정렬순서': [1, 2, 3, 4],
             '부서명': ['용접팀', '전기팀', '밀폐작업팀', '일반관리팀'],
             '특별교육과목1': ["해당없음"] * 4, '특별교육과목2': ["해당없음"] * 4,
-            '유해인자': ['용접흄, 분진', '전류(감전)', '산소결핍', '없음']
+            '유해인자': ['용접흄, 분진', '전류(감전)', '산소결핍', '없음'],
+            '담당관리감독자': ['김감독', '이감독', '박감독', '최팀장'] # 초기값 예시
         })
     st.session_state.dept_config_final = sanitize_config_df(st.session_state.dept_config_final)
 
@@ -191,21 +199,22 @@ with st.sidebar:
                     else:
                         new_d = new_d.rename(columns={'특별교육 1':'특별교육과목1', '특별교육 2':'특별교육과목2'})
                         new_d = sanitize_config_df(new_d)
-                        cols = ['부서명', '특별교육과목1', '특별교육과목2', '유해인자']
+                        cols = ['부서명', '특별교육과목1', '특별교육과목2', '유해인자', '담당관리감독자']
                         for c in cols: 
-                            if c not in new_d.columns: new_d[c] = "해당없음" if "특별" in c else "없음"
+                            if c not in new_d.columns: new_d[c] = "해당없음" if "특별" in c else ""
                         final_d = pd.concat([st.session_state.dept_config_final[cols], new_d[cols]]).drop_duplicates(['부서명'], keep='last').reset_index(drop=True)
                         final_d.insert(0, '정렬순서', range(1, len(final_d)+1))
                         st.session_state.dept_config_final = final_d
                         st.rerun()
             except Exception as e: st.error(str(e))
 
-        st.caption("아래 표를 직접 수정하세요.")
+        st.caption("부서별 담당 관리감독자를 입력하면 신규 입사자 탭에 자동 매핑됩니다.")
         sorted_df = st.session_state.dept_config_final.sort_values('정렬순서')
         edited_dept_config = st.data_editor(
             sorted_df, num_rows="dynamic", key="dept_editor_sidebar", use_container_width=True, hide_index=True,
             column_config={
                 "부서명": st.column_config.TextColumn("부서명"),
+                "담당관리감독자": st.column_config.TextColumn("담당 관리감독자 (신규자 매핑용)"),
                 "특별교육과목1": st.column_config.SelectboxColumn("특별교육 1", width="medium", options=SPECIAL_EDU_OPTIONS),
                 "특별교육과목2": st.column_config.SelectboxColumn("특별교육 2", width="medium", options=SPECIAL_EDU_OPTIONS),
                 "유해인자": st.column_config.TextColumn("유해인자")
@@ -217,6 +226,8 @@ with st.sidebar:
     DEPT_S1 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목1']))
     DEPT_S2 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목2']))
     DEPT_FAC = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['유해인자']))
+    # [수정] 담당자 매핑 딕셔너리 생성
+    DEPT_SUP = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['담당관리감독자']))
     DEPTS_LIST = list(st.session_state.dept_config_final['부서명'])
 
     st.divider()
@@ -313,6 +324,8 @@ for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
 df['특별교육_과목1'] = df['부서'].map(DEPT_S1).fillna("설정필요")
 df['특별교육_과목2'] = df['부서'].map(DEPT_S2).fillna("해당없음")
 df['유해인자'] = df['부서'].map(DEPT_FAC).fillna("없음")
+# [수정] 담당 관리감독자 자동 매핑
+df['담당관리감독자'] = df['부서'].map(DEPT_SUP).fillna("-")
 
 mask_no_factor = df['유해인자'].isin(['없음', '', '해당없음'])
 df.loc[mask_no_factor, '특수검진_대상'] = False
@@ -337,18 +350,15 @@ def calc_next_health(row):
 
 df['다음_특수검진일'] = df.apply(calc_next_health, axis=1)
 
-# [복구] 필터링 기능 (데이터 준비 후 적용)
+# 필터링
 with st.expander("🔍 데이터 필터링 (이름/부서/직책 검색)", expanded=False):
     c1, c2, c3 = st.columns(3)
     search_name = c1.text_input("이름 검색 (엔터)")
-    
     all_depts = sorted(df['부서'].dropna().unique())
     all_roles = sorted(df['직책'].dropna().unique())
-    
     search_dept = c2.multiselect("부서 선택", options=all_depts)
     search_role = c3.multiselect("직책 선택", options=all_roles)
 
-# 필터링 적용 (view_df는 필터가 적용된 전체 데이터)
 view_df = df.copy()
 if search_name:
     view_df = view_df[view_df['성명'].astype(str).str.contains(search_name)]
@@ -357,13 +367,10 @@ if search_dept:
 if search_role:
     view_df = view_df[view_df['직책'].isin(search_role)]
 
-# 재직자용 데이터 (조회인원 카운트용)
 active_df = view_df[view_df['퇴사여부'] == False]
-
-# 신규 입사자 수 (올해 입사자, 퇴사자 포함, 필터 적용)
 this_year_hires_count = len(view_df[view_df['입사연도'] == today.year])
 
-# 2. 대시보드 출력
+# 2. 대시보드
 col1, col2, col3, col4 = st.columns(4)
 with col1: st.metric("👥 조회 인원(재직)", f"{len(active_df)}명")
 with col2: st.metric("🌱 올해 신규 입사자", f"{this_year_hires_count}명")
@@ -375,7 +382,6 @@ st.divider()
 # 3. 탭 구성
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 입사자", "⚠️ 특별교육", "🏥 특수건강검진"])
 
-# [탭 1, 2, 4, 5]는 active_df(재직자) 사용
 with tab1:
     st.subheader("안전보건관리책임자 (2년) / 관리감독자 (1년)")
     mask_mgr = active_df['직책'].astype(str).str.replace(" ", "").str.contains("책임자|감독자", na=False)
@@ -426,7 +432,7 @@ with tab2:
             st.rerun()
     else: st.info("대상자 없음")
 
-# [탭 3] 신규 입사자는 view_df(퇴사자 포함) 사용
+# [수정] 신규 입사자 탭: 담당 관리감독자 표시 추가
 with tab3:
     years = [today.year, today.year-1, today.year-2]
     sel_y = st.radio("입사년도 선택", years, horizontal=True)
@@ -436,7 +442,8 @@ with tab3:
     
     if not target.empty:
         edited_target = st.data_editor(
-            target[['신규교육_이수','퇴사여부','성명','입사일','부서']],
+            # 담당관리감독자 컬럼 추가
+            target[['신규교육_이수','퇴사여부','성명','입사일','부서','담당관리감독자']],
             key="new_edu_editor",
             hide_index=True, use_container_width=True,
             column_config={
@@ -444,7 +451,8 @@ with tab3:
                 "퇴사여부": st.column_config.CheckboxColumn("퇴사", disabled=True, width="small"),
                 "입사일": st.column_config.DateColumn(format="YYYY-MM-DD", disabled=True),
                 "성명": st.column_config.TextColumn(disabled=True),
-                "부서": st.column_config.TextColumn(disabled=True)
+                "부서": st.column_config.TextColumn(disabled=True),
+                "담당관리감독자": st.column_config.TextColumn(disabled=True, width="medium")
             }
         )
         edited_target.index = target.index
@@ -456,7 +464,6 @@ with tab3:
 with tab4:
     st.subheader("특별안전보건교육 이수 관리")
     
-    # active_df 사용 (퇴사자 제외)
     target_indices = active_df[
         (active_df['특별교육_과목1'] != '해당없음') & 
         (active_df['특수검진_대상'] == True)
@@ -493,7 +500,6 @@ with tab4:
 with tab5:
     st.subheader("특수건강검진 현황")
     
-    # active_df 사용 (퇴사자 제외)
     target_indices = active_df[active_df['특수검진_대상'] == True].index
     target = active_df.loc[target_indices].copy()
     
