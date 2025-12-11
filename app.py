@@ -276,7 +276,7 @@ with st.sidebar:
                             st.rerun()
                 except Exception as e: st.error(str(e))
 
-        st.caption("특수검진 제외는 여기서 체크 해제")
+        st.caption("체크 해제 시: 특수검진 및 특별교육 관리 대상에서 제외됨")
         edited_df = st.data_editor(
             st.session_state.df_final,
             num_rows="dynamic",
@@ -314,6 +314,7 @@ df['특별교육_과목1'] = df['부서'].map(DEPT_S1).fillna("설정필요")
 df['특별교육_과목2'] = df['부서'].map(DEPT_S2).fillna("해당없음")
 df['유해인자'] = df['부서'].map(DEPT_FAC).fillna("없음")
 
+# [요청 반영] 유해인자 없으면 특수검진 대상 자동 해제
 mask_no_factor = df['유해인자'].isin(['없음', '', '해당없음'])
 df.loc[mask_no_factor, '특수검진_대상'] = False
 
@@ -428,7 +429,11 @@ with tab3:
 with tab4:
     st.subheader("특별안전보건교육 이수 관리")
     
-    target_indices = dashboard_df[dashboard_df['특별교육_과목1'] != '해당없음'].index
+    # [수정] 검진대상 체크 & 특별교육 대상인 사람만 필터링
+    target_indices = dashboard_df[
+        (dashboard_df['특별교육_과목1'] != '해당없음') & 
+        (dashboard_df['특수검진_대상'] == True)
+    ].index
     target = dashboard_df.loc[target_indices].copy()
     
     if not target.empty:
@@ -456,7 +461,7 @@ with tab4:
         if not target[check_cols].equals(edited_target[check_cols]):
             st.session_state.df_final.loc[target_indices, check_cols] = edited_target[check_cols]
             st.rerun()
-    else: st.info("특별교육 대상자가 없습니다.")
+    else: st.info("특별교육 대상자가 없습니다. (검진대상 체크 여부 확인)")
 
 with tab5:
     st.subheader("특수건강검진 현황")
