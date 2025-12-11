@@ -301,7 +301,7 @@ with st.sidebar:
 df = st.session_state.df_final.copy()
 today = date.today()
 
-# 이름 없는 빈 줄 제거 (25명 정확히 표시)
+# 이름 없는 빈 줄 제거
 if '성명' in df.columns:
     df = df.dropna(subset=['성명'])
     df = df[df['성명'].astype(str).str.strip() != '']
@@ -325,6 +325,7 @@ def add_days(d, days):
 
 df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce')
 df['입사연도'] = df['입사일_dt'].dt.year
+# 법적 신규자 기준 (90일)
 df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
 
 df['다음_직무교육일'] = df.apply(calculate_job_training_date, axis=1)
@@ -337,45 +338,32 @@ def calc_next_health(row):
 
 df['다음_특수검진일'] = df.apply(calc_next_health, axis=1)
 
-# [추가] 필터링 기능 (대시보드 반영을 위해 계산 후 필터 적용)
-with st.expander("🔍 데이터 필터링 (이름/부서/직책 검색)", expanded=False):
-    c1, c2, c3 = st.columns(3)
-    search_name = c1.text_input("이름 검색 (엔터)")
-    
-    # 부서/직책 목록 추출
-    all_depts = sorted(df['부서'].dropna().unique())
-    all_roles = sorted(df['직책'].dropna().unique())
-    
-    search_dept = c2.multiselect("부서 선택", options=all_depts)
-    search_role = c3.multiselect("직책 선택", options=all_roles)
+# [수정] 대시보드 인원 통계 분리
+# 1. '조회 인원'은 퇴사자 제외 (현재 재직자)
+active_df = df[df['퇴사여부'] == False]
 
-# 필터링 로직 적용
-dashboard_df = df[df['퇴사여부'] == False] # 퇴사자 기본 제외
+# 2. '신규 입사자'는 올해 입사자 전체 (퇴사자 포함, 교육 누락 방지)
+this_year_hires_count = len(df[df['입사연도'] == today.year])
 
-if search_name:
-    dashboard_df = dashboard_df[dashboard_df['성명'].astype(str).str.contains(search_name)]
-if search_dept:
-    dashboard_df = dashboard_df[dashboard_df['부서'].isin(search_dept)]
-if search_role:
-    dashboard_df = dashboard_df[dashboard_df['직책'].isin(search_role)]
-
-# 2. 대시보드
 col1, col2, col3, col4 = st.columns(4)
-with col1: st.metric("👥 조회 인원", f"{len(dashboard_df)}명")
-with col2: st.metric("🌱 신규 입사자", f"{len(dashboard_df[dashboard_df['법적_신규자']])}명")
-with col3: st.metric("👔 책임자/감독자", f"{len(dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])])}명")
-with col4: st.metric("🏥 검진 대상", f"{len(dashboard_df[dashboard_df['특수검진_대상'] == True])}명")
+with col1: st.metric("👥 조회 인원(재직)", f"{len(active_df)}명")
+with col2: st.metric("🌱 올해 신규 입사자", f"{this_year_hires_count}명")
+with col3: st.metric("👔 책임자/감독자", f"{len(active_df[active_df['직책'].isin(['안전보건관리책임자', '관리감독자'])])}명")
+with col4: st.metric("🏥 검진 대상", f"{len(active_df[active_df['특수검진_대상'] == True])}명")
 
 st.divider()
 
 # 3. 탭 구성
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👔 책임자/감독자", "♻️ 폐기물 담당자", "🌱 신규 입사자", "⚠️ 특별교육", "🏥 특수건강검진"])
 
+# [탭 1, 2, 4, 5]는 재직자 기준 (active_df) 사용
+# [탭 3 신규입사자]는 전체 기준 (df) 사용
+
 with tab1:
     st.subheader("안전보건관리책임자 (2년) / 관리감독자 (1년)")
-    mask_mgr = dashboard_df['직책'].astype(str).str.replace(" ", "").str.contains("책임자|감독자", na=False)
-    target_indices = dashboard_df[mask_mgr].index
-    target = dashboard_df.loc[target_indices].copy()
+    mask_mgr = active_df['직책'].astype(str).str.replace(" ", "").str.contains("책임자|감독자", na=False)
+    target_indices = active_df[mask_mgr].index
+    target = active_df.loc[target_indices].copy()
     
     if not target.empty:
         target['상태'] = target['다음_직무교육일'].apply(get_dday_status)
@@ -398,9 +386,9 @@ with tab1:
 
 with tab2:
     st.subheader("폐기물 담당자 (3년)")
-    mask_waste = dashboard_df['직책'].astype(str).str.replace(" ", "").str.contains("폐기물", na=False)
-    target_indices = dashboard_df[mask_waste].index
-    target = dashboard_df.loc[target_indices].copy()
+    mask_waste = active_df['직책'].astype(str).str.replace(" ", "").str.contains("폐기물", na=False)
+    target_indices = active_df[mask_waste].index
+    target = active_df.loc[target_indices].copy()
     
     if not target.empty:
         target['상태'] = target['다음_직무교육일'].apply(get_dday_status)
@@ -421,20 +409,23 @@ with tab2:
             st.rerun()
     else: st.info("대상자 없음")
 
+# [수정] 신규 입사자 탭은 '전체 데이터(df)' 사용 -> 퇴사자도 보이게 함
 with tab3:
     years = [today.year, today.year-1, today.year-2]
     sel_y = st.radio("입사년도 선택", years, horizontal=True)
     
-    target_indices = dashboard_df[dashboard_df['입사연도'] == sel_y].index
-    target = dashboard_df.loc[target_indices].copy()
+    # 여기서는 active_df가 아니라 df를 사용
+    target_indices = df[df['입사연도'] == sel_y].index
+    target = df.loc[target_indices].copy()
     
     if not target.empty:
         edited_target = st.data_editor(
-            target[['신규교육_이수','성명','입사일','부서']],
+            target[['신규교육_이수','퇴사여부','성명','입사일','부서']],
             key="new_edu_editor",
             hide_index=True, use_container_width=True,
             column_config={
                 "신규교육_이수": st.column_config.CheckboxColumn("이수 여부", width="small"),
+                "퇴사여부": st.column_config.CheckboxColumn("퇴사", disabled=True, width="small"),
                 "입사일": st.column_config.DateColumn(format="YYYY-MM-DD", disabled=True),
                 "성명": st.column_config.TextColumn(disabled=True),
                 "부서": st.column_config.TextColumn(disabled=True)
@@ -449,11 +440,11 @@ with tab3:
 with tab4:
     st.subheader("특별안전보건교육 이수 관리")
     
-    target_indices = dashboard_df[
-        (dashboard_df['특별교육_과목1'] != '해당없음') & 
-        (dashboard_df['특수검진_대상'] == True)
+    target_indices = active_df[
+        (active_df['특별교육_과목1'] != '해당없음') & 
+        (active_df['특수검진_대상'] == True)
     ].index
-    target = dashboard_df.loc[target_indices].copy()
+    target = active_df.loc[target_indices].copy()
     
     if not target.empty:
         cols_to_show = ['성명','부서','특별교육_과목1','공통8H','과목1_온라인4H','과목1_감독자4H','특별교육_과목2','과목2_온라인4H','과목2_감독자4H']
@@ -485,8 +476,8 @@ with tab4:
 with tab5:
     st.subheader("특수건강검진 현황")
     
-    target_indices = dashboard_df[dashboard_df['특수검진_대상'] == True].index
-    target = dashboard_df.loc[target_indices].copy()
+    target_indices = active_df[active_df['특수검진_대상'] == True].index
+    target = active_df.loc[target_indices].copy()
     
     if not target.empty:
         target['상태'] = target.apply(lambda r: "🔴 검진필요" if r['검진단계']=="배치전(미실시)" else get_dday_status(r['다음_특수검진일']), axis=1)
