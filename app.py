@@ -109,7 +109,6 @@ with st.sidebar:
             date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일', '다음_직무교육일', '다음_특수검진일']
             for col in date_cols:
                 if col in save_df.columns:
-                    # NaT를 빈 문자열로 변환하여 저장
                     save_df[col] = save_df[col].apply(lambda x: x.strftime('%Y-%m-%d') if not pd.isna(x) else '')
 
             data_content = save_df.to_csv(index=False)
@@ -138,11 +137,11 @@ with st.sidebar:
             csv_string = contents.decoded_content.decode("utf-8")
             loaded_data = pd.read_csv(io.StringIO(csv_string))
             
-            # [수정] 불러올 때 문자열로 처리 후 변환
+            # [수정] 불러올 때 datetime64로 변환 (.dt.date 삭제)
             date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
             for col in date_cols:
                 if col in loaded_data.columns:
-                    loaded_data[col] = pd.to_datetime(loaded_data[col].astype(str), errors='coerce')
+                    loaded_data[col] = pd.to_datetime(loaded_data[col], errors='coerce')
             
             if '검진단계' not in loaded_data.columns: loaded_data['검진단계'] = "배치전(미실시)"
             else: loaded_data['검진단계'] = loaded_data['검진단계'].fillna("배치전(미실시)")
@@ -244,11 +243,11 @@ with st.sidebar:
         }
         st.session_state.df_final = pd.DataFrame(data)
 
-    # [오류 해결] .astype(str)로 통일 후 변환 (TypeError 방지)
+    # 날짜 강제 변환
     date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
     for col in date_cols:
         if col in st.session_state.df_final.columns:
-            st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col].astype(str), errors='coerce')
+            st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce')
 
     bool_cols = ['퇴사여부', '특수검진_대상', '신규교육_이수', '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H']
     for col in bool_cols:
@@ -276,7 +275,7 @@ with st.sidebar:
                             st.rerun()
                 except Exception as e: st.error(str(e))
 
-        st.caption("체크 해제 시: 특수검진 및 특별교육 관리 대상에서 제외됨")
+        st.caption("특수검진 제외는 여기서 체크 해제")
         edited_df = st.data_editor(
             st.session_state.df_final,
             num_rows="dynamic",
@@ -305,6 +304,11 @@ with st.sidebar:
 df = st.session_state.df_final.copy()
 today = date.today()
 
+# [중요] 이름 없는 빈 줄 제거 (26명 -> 25명 해결)
+if '성명' in df.columns:
+    df = df.dropna(subset=['성명']) # 이름이 NaN인 행 제거
+    df = df[df['성명'].astype(str).str.strip() != ''] # 이름이 빈 문자열인 행 제거
+
 # 날짜 보장
 for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
     if col in df.columns: 
@@ -314,7 +318,6 @@ df['특별교육_과목1'] = df['부서'].map(DEPT_S1).fillna("설정필요")
 df['특별교육_과목2'] = df['부서'].map(DEPT_S2).fillna("해당없음")
 df['유해인자'] = df['부서'].map(DEPT_FAC).fillna("없음")
 
-# [요청 반영] 유해인자 없으면 특수검진 대상 자동 해제
 mask_no_factor = df['유해인자'].isin(['없음', '', '해당없음'])
 df.loc[mask_no_factor, '특수검진_대상'] = False
 
@@ -326,7 +329,7 @@ def add_days(d, days):
 
 df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce')
 df['입사연도'] = df['입사일_dt'].dt.year
-df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 365 if pd.notnull(x) else False)
+df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
 
 df['다음_직무교육일'] = df.apply(calculate_job_training_date, axis=1)
 
@@ -429,11 +432,7 @@ with tab3:
 with tab4:
     st.subheader("특별안전보건교육 이수 관리")
     
-    # [수정] 검진대상 체크 & 특별교육 대상인 사람만 필터링
-    target_indices = dashboard_df[
-        (dashboard_df['특별교육_과목1'] != '해당없음') & 
-        (dashboard_df['특수검진_대상'] == True)
-    ].index
+    target_indices = dashboard_df[dashboard_df['특별교육_과목1'] != '해당없음'].index
     target = dashboard_df.loc[target_indices].copy()
     
     if not target.empty:
@@ -461,7 +460,7 @@ with tab4:
         if not target[check_cols].equals(edited_target[check_cols]):
             st.session_state.df_final.loc[target_indices, check_cols] = edited_target[check_cols]
             st.rerun()
-    else: st.info("특별교육 대상자가 없습니다. (검진대상 체크 여부 확인)")
+    else: st.info("특별교육 대상자가 없습니다.")
 
 with tab5:
     st.subheader("특수건강검진 현황")
@@ -492,4 +491,3 @@ with tab5:
             st.rerun()
     else: 
         st.info("대상자가 없습니다. 왼쪽 사이드바 명부에서 검진대상을 체크해주세요. (유해인자가 '없음'인 경우 자동으로 제외됩니다)")
-
