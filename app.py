@@ -329,7 +329,7 @@ def add_days(d, days):
 
 df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce')
 df['입사연도'] = df['입사일_dt'].dt.year
-df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
+df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 365 if pd.notnull(x) else False)
 
 df['다음_직무교육일'] = df.apply(calculate_job_training_date, axis=1)
 
@@ -491,3 +491,4 @@ with tab5:
             st.rerun()
     else: 
         st.info("대상자가 없습니다. 왼쪽 사이드바 명부에서 검진대상을 체크해주세요. (유해인자가 '없음'인 경우 자동으로 제외됩니다)")
+
