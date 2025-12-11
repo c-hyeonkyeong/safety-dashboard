@@ -49,7 +49,6 @@ def calculate_job_training_date(row):
     if pd.isna(last_date) or str(last_date) == 'NaT' or str(last_date).strip() == "":
         return None
     
-    # 타입 보장
     if not isinstance(last_date, pd.Timestamp):
         try: last_date = pd.to_datetime(last_date)
         except: return None
@@ -137,7 +136,6 @@ with st.sidebar:
             csv_string = contents.decoded_content.decode("utf-8")
             loaded_data = pd.read_csv(io.StringIO(csv_string))
             
-            # [수정] 불러올 때 datetime64로 변환 (.dt.date 삭제)
             date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
             for col in date_cols:
                 if col in loaded_data.columns:
@@ -243,7 +241,6 @@ with st.sidebar:
         }
         st.session_state.df_final = pd.DataFrame(data)
 
-    # 날짜 강제 변환
     date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
     for col in date_cols:
         if col in st.session_state.df_final.columns:
@@ -304,12 +301,11 @@ with st.sidebar:
 df = st.session_state.df_final.copy()
 today = date.today()
 
-# [중요] 이름 없는 빈 줄 제거 (26명 -> 25명 해결)
+# 이름 없는 빈 줄 제거 (25명 정확히 표시)
 if '성명' in df.columns:
-    df = df.dropna(subset=['성명']) # 이름이 NaN인 행 제거
-    df = df[df['성명'].astype(str).str.strip() != ''] # 이름이 빈 문자열인 행 제거
+    df = df.dropna(subset=['성명'])
+    df = df[df['성명'].astype(str).str.strip() != '']
 
-# 날짜 보장
 for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
     if col in df.columns: 
         df[col] = pd.to_datetime(df[col], errors='coerce')
@@ -329,7 +325,7 @@ def add_days(d, days):
 
 df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce')
 df['입사연도'] = df['입사일_dt'].dt.year
-df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 365 if pd.notnull(x) else False)
+df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
 
 df['다음_직무교육일'] = df.apply(calculate_job_training_date, axis=1)
 
@@ -340,11 +336,32 @@ def calc_next_health(row):
     return add_days(row['최근_특수검진일'], cycle)
 
 df['다음_특수검진일'] = df.apply(calc_next_health, axis=1)
-dashboard_df = df[df['퇴사여부'] == False]
+
+# [추가] 필터링 기능 (대시보드 반영을 위해 계산 후 필터 적용)
+with st.expander("🔍 데이터 필터링 (이름/부서/직책 검색)", expanded=False):
+    c1, c2, c3 = st.columns(3)
+    search_name = c1.text_input("이름 검색 (엔터)")
+    
+    # 부서/직책 목록 추출
+    all_depts = sorted(df['부서'].dropna().unique())
+    all_roles = sorted(df['직책'].dropna().unique())
+    
+    search_dept = c2.multiselect("부서 선택", options=all_depts)
+    search_role = c3.multiselect("직책 선택", options=all_roles)
+
+# 필터링 로직 적용
+dashboard_df = df[df['퇴사여부'] == False] # 퇴사자 기본 제외
+
+if search_name:
+    dashboard_df = dashboard_df[dashboard_df['성명'].astype(str).str.contains(search_name)]
+if search_dept:
+    dashboard_df = dashboard_df[dashboard_df['부서'].isin(search_dept)]
+if search_role:
+    dashboard_df = dashboard_df[dashboard_df['직책'].isin(search_role)]
 
 # 2. 대시보드
 col1, col2, col3, col4 = st.columns(4)
-with col1: st.metric("👥 총 관리 인원", f"{len(dashboard_df)}명")
+with col1: st.metric("👥 조회 인원", f"{len(dashboard_df)}명")
 with col2: st.metric("🌱 신규 입사자", f"{len(dashboard_df[dashboard_df['법적_신규자']])}명")
 with col3: st.metric("👔 책임자/감독자", f"{len(dashboard_df[dashboard_df['직책'].isin(['안전보건관리책임자', '관리감독자'])])}명")
 with col4: st.metric("🏥 검진 대상", f"{len(dashboard_df[dashboard_df['특수검진_대상'] == True])}명")
@@ -432,7 +449,10 @@ with tab3:
 with tab4:
     st.subheader("특별안전보건교육 이수 관리")
     
-    target_indices = dashboard_df[dashboard_df['특별교육_과목1'] != '해당없음'].index
+    target_indices = dashboard_df[
+        (dashboard_df['특별교육_과목1'] != '해당없음') & 
+        (dashboard_df['특수검진_대상'] == True)
+    ].index
     target = dashboard_df.loc[target_indices].copy()
     
     if not target.empty:
@@ -460,7 +480,7 @@ with tab4:
         if not target[check_cols].equals(edited_target[check_cols]):
             st.session_state.df_final.loc[target_indices, check_cols] = edited_target[check_cols]
             st.rerun()
-    else: st.info("특별교육 대상자가 없습니다.")
+    else: st.info("특별교육 대상자가 없습니다. (검진대상 체크 여부 확인)")
 
 with tab5:
     st.subheader("특수건강검진 현황")
@@ -491,4 +511,3 @@ with tab5:
             st.rerun()
     else: 
         st.info("대상자가 없습니다. 왼쪽 사이드바 명부에서 검진대상을 체크해주세요. (유해인자가 '없음'인 경우 자동으로 제외됩니다)")
-
