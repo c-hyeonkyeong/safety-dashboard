@@ -7,13 +7,12 @@ import io
 # --- [1. 시스템 설정] ---
 st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️")
 
-# CSS: PC 사이드바 너비를 450px로 조정 (기존 600px에서 축소)
+# CSS: PC 화면에서는 사이드바 폭 450px 고정, 모바일은 자동
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
     div.stButton > button {width: 100%; border-radius: 6px;}
     
-    /* PC 화면 (너비 992px 이상)에서만 사이드바를 450px로 고정 */
     @media (min-width: 992px) {
         [data-testid="stSidebar"] {
             min-width: 450px !important;
@@ -139,6 +138,13 @@ supervisor_list = sorted(
 if "-" not in supervisor_list:
     supervisor_list.insert(0, "-")
 
+# [중요 수정] 사이드바에서 사용하기 위해 공통 데이터 매핑을 위로 이동
+DEPT_S1 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목1']))
+DEPT_S2 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목2']))
+DEPT_FAC = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['유해인자']))
+DEPT_SUP = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['담당관리감독자']))
+DEPTS_LIST = list(st.session_state.dept_config_final['부서명'])
+
 
 # ==========================================
 # [사이드바] 통합 메뉴
@@ -146,7 +152,7 @@ if "-" not in supervisor_list:
 with st.sidebar:
     st.header("⚙️ 통합 관리자 메뉴")
     
-    # [핵심] 메뉴 전체를 끄고 켤 수 있는 스위치 (이중 Expander 문제 해결)
+    # 메뉴 전체를 끄고 켤 수 있는 스위치
     show_manager_menu = st.toggle("🎛️ 관리자 메뉴 전체 보기", value=True)
     
     st.divider()
@@ -348,15 +354,6 @@ with st.sidebar:
 
     else:
         st.info("관리자 메뉴가 숨겨졌습니다. (상단 스위치로 활성화)")
-
-# ==========================================
-# [공통 데이터 매핑]
-# ==========================================
-DEPT_S1 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목1']))
-DEPT_S2 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목2']))
-DEPT_FAC = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['유해인자']))
-DEPT_SUP = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['담당관리감독자']))
-DEPTS_LIST = list(st.session_state.dept_config_final['부서명'])
 
 # ==========================================
 # [메인 화면] 계산 및 대시보드
