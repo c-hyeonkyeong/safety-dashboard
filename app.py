@@ -265,28 +265,18 @@ with st.sidebar:
         st.caption("담당 관리감독자는 명부에 있는 '관리감독자'만 선택 가능합니다.")
         sorted_df = st.session_state.dept_config_final.sort_values('정렬순서')
         
-       with st.form(key="dept_form"):
-            edited_dept_config = st.data_editor(
-                sorted_df, 
-                num_rows="dynamic", 
-                key="dept_editor_sidebar", 
-                use_container_width=True, 
-                hide_index=True,
-                column_config={
-                    "부서명": st.column_config.TextColumn("부서명"),
-                    "담당관리감독자": st.column_config.SelectboxColumn("담당 관리감독자", options=supervisor_list, width="medium"),
-                    "특별교육과목1": st.column_config.SelectboxColumn("특별교육 1", width="medium", options=SPECIAL_EDU_OPTIONS),
-                    "특별교육과목2": st.column_config.SelectboxColumn("특별교육 2", width="medium", options=SPECIAL_EDU_OPTIONS),
-                    "유해인자": st.column_config.TextColumn("유해인자")
-                }
-            )
-            # 폼 제출 버튼 (이걸 눌러야 실제 반영됨)
-            dept_submit = st.form_submit_button("✅ 부서 설정 적용하기")
-
-        # 버튼을 눌렀을 때만 session_state 업데이트 및 리런
-        if dept_submit:
+        edited_dept_config = st.data_editor(
+            sorted_df, num_rows="dynamic", key="dept_editor_sidebar", use_container_width=True, hide_index=True,
+            column_config={
+                "부서명": st.column_config.TextColumn("부서명"),
+                "담당관리감독자": st.column_config.SelectboxColumn("담당 관리감독자", options=supervisor_list, width="medium"),
+                "특별교육과목1": st.column_config.SelectboxColumn("특별교육 1", width="medium", options=SPECIAL_EDU_OPTIONS),
+                "특별교육과목2": st.column_config.SelectboxColumn("특별교육 2", width="medium", options=SPECIAL_EDU_OPTIONS),
+                "유해인자": st.column_config.TextColumn("유해인자")
+            }
+        )
+        if not sorted_df.equals(edited_dept_config):
             st.session_state.dept_config_final = edited_dept_config
-            st.rerun()
 
     DEPT_S1 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목1']))
     DEPT_S2 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목2']))
@@ -318,31 +308,25 @@ with st.sidebar:
                 except Exception as e: st.error(str(e))
 
         st.caption("특수검진 제외는 여기서 체크 해제")
-        with st.form(key="worker_editor_form"):
-            edited_df = st.data_editor(
-                st.session_state.df_final,
-                num_rows="dynamic",
-                use_container_width=True,
-                key="main_editor_sidebar",
-                column_config={
-                    "퇴사여부": st.column_config.CheckboxColumn("퇴사", default=False, width="small"),
-                    "특수검진_대상": st.column_config.CheckboxColumn("검진대상", default=True, width="small"),
-                    "성명": st.column_config.TextColumn("성명", width="medium"),
-                    "직책": st.column_config.SelectboxColumn("직책", options=ROLES, width="medium"),
-                    "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST, width="medium"),
-                    "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                    "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                    "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                    "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES)
-                }
-            )
-            # 체크박스 변경 후 이 버튼을 눌러야 저장됩니다
-            confirm_btn = st.form_submit_button("✅ 명부 변경사항 적용하기")
-
-        # 버튼이 눌렸을 때만 데이터 업데이트 및 새로고침
-        if confirm_btn:
+        edited_df = st.data_editor(
+            st.session_state.df_final,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="main_editor_sidebar",
+            column_config={
+                "퇴사여부": st.column_config.CheckboxColumn("퇴사", default=False, width="small"),
+                "특수검진_대상": st.column_config.CheckboxColumn("검진대상", default=True, width="small"),
+                "성명": st.column_config.TextColumn("성명", width="medium"),
+                "직책": st.column_config.SelectboxColumn("직책", options=ROLES, width="medium"),
+                "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST, width="medium"),
+                "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES)
+            }
+        )
+        if not st.session_state.df_final.equals(edited_df):
             st.session_state.df_final = edited_df
-            st.rerun()
 
 # ==========================================
 # [메인 화면] 계산 및 대시보드
