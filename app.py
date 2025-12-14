@@ -46,12 +46,11 @@ def sanitize_config_df(df):
     else: df['유해인자'] = df['유해인자'].fillna("없음")
     return df
 
-# [핵심 1] 날짜 더하기 함수 (오류 방지용 수정)
+# [핵심 1] 날짜 더하기 함수
 def add_days(d, days):
     try: 
         if pd.isna(d) or str(d) == "NaT" or str(d).strip() == "": return None
-        if isinstance(d, str): d = pd.to_datetime(d).date()
-        if isinstance(d, datetime): d = d.date()
+        d = pd.to_datetime(d)
         return d + timedelta(days=days)
     except: return None
 
@@ -59,11 +58,8 @@ def add_days(d, days):
 def calculate_job_training_date(row):
     last_date = row.get('최근_직무교육일')
     if pd.isna(last_date) or str(last_date) == 'NaT' or str(last_date).strip() == "": return None
-    
-    # 확실한 Timestamp 변환
-    if not isinstance(last_date, pd.Timestamp):
-        try: last_date = pd.to_datetime(last_date)
-        except: return None
+    try: last_date = pd.to_datetime(last_date)
+    except: return None
             
     role = str(row.get('직책', '')).replace(" ", "").strip()
     try:
@@ -260,24 +256,27 @@ with st.sidebar:
                         st.rerun()
             except Exception as e: st.error(str(e))
 
-        st.caption("담당 관리감독자는 명부에 있는 '관리감독자'만 선택 가능합니다.")
-        sorted_df = st.session_state.dept_config_final.sort_values('정렬순서')
-        
-        # [수정: Form 적용] 부서 설정 수정 시 깜빡임 방지
-        with st.form("dept_config_form"):
-            edited_dept_config = st.data_editor(
-                sorted_df, num_rows="dynamic", key="dept_editor_sidebar", use_container_width=True, hide_index=True,
-                column_config={
-                    "부서명": st.column_config.TextColumn("부서명"),
-                    "담당관리감독자": st.column_config.SelectboxColumn("담당 관리감독자", options=supervisor_list, width="medium"),
-                    "특별교육과목1": st.column_config.SelectboxColumn("특별교육 1", width="medium", options=SPECIAL_EDU_OPTIONS),
-                    "특별교육과목2": st.column_config.SelectboxColumn("특별교육 2", width="medium", options=SPECIAL_EDU_OPTIONS),
-                    "유해인자": st.column_config.TextColumn("유해인자")
-                }
-            )
-            if st.form_submit_button("설정 적용"):
-                st.session_state.dept_config_final = edited_dept_config
-                st.rerun()
+    st.caption("담당 관리감독자는 명부에 있는 '관리감독자'만 선택 가능합니다.")
+    sorted_df = st.session_state.dept_config_final.sort_values('정렬순서')
+    
+    # [수정] 사이드바 부서 설정 - 키 삭제 로직 추가
+    with st.form("dept_config_form"):
+        edited_dept_config = st.data_editor(
+            sorted_df, num_rows="dynamic", key="dept_editor_sidebar", use_container_width=True, hide_index=True,
+            column_config={
+                "부서명": st.column_config.TextColumn("부서명"),
+                "담당관리감독자": st.column_config.SelectboxColumn("담당 관리감독자", options=supervisor_list, width="medium"),
+                "특별교육과목1": st.column_config.SelectboxColumn("특별교육 1", width="medium", options=SPECIAL_EDU_OPTIONS),
+                "특별교육과목2": st.column_config.SelectboxColumn("특별교육 2", width="medium", options=SPECIAL_EDU_OPTIONS),
+                "유해인자": st.column_config.TextColumn("유해인자")
+            }
+        )
+        if st.form_submit_button("설정 적용"):
+            st.session_state.dept_config_final = edited_dept_config
+            # 중요: 변경된 내용을 바로 대시보드에 반영하기 위해 캐시 삭제
+            if "dept_editor_sidebar" in st.session_state:
+                del st.session_state["dept_editor_sidebar"]
+            st.rerun()
 
     DEPT_S1 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목1']))
     DEPT_S2 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목2']))
@@ -290,7 +289,7 @@ with st.sidebar:
     # -----------------------------------------------
     # 2. 근로자 명부 관리
     # -----------------------------------------------
-    with st.expander("📝 근로자 명부 관리 (파일/수정)", expanded=True):
+    with st.expander("📝 근로자 명부 관리 (파일 병합)", expanded=True):
         with st.popover("📂 명부 파일 등록 (Excel/CSV)"):
             up_file = st.file_uploader("파일 선택", type=['csv', 'xlsx'], key="worker_up")
             if up_file:
@@ -308,36 +307,39 @@ with st.sidebar:
                             st.rerun()
                 except Exception as e: st.error(str(e))
 
-        st.caption("특수검진 제외는 여기서 체크 해제")
-        
-        # [수정: Form 적용] 명부 수정 시 깜빡임 방지
-        with st.form("worker_main_form"):
-            edited_df = st.data_editor(
-                st.session_state.df_final,
-                num_rows="dynamic",
-                use_container_width=True,
-                key="main_editor_sidebar",
-                column_config={
-                    "퇴사여부": st.column_config.CheckboxColumn("퇴사", default=False, width="small"),
-                    "특수검진_대상": st.column_config.CheckboxColumn("검진대상", default=True, width="small"),
-                    "성명": st.column_config.TextColumn("성명", width="medium"),
-                    "직책": st.column_config.SelectboxColumn("직책", options=ROLES, width="medium"),
-                    "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST, width="medium"),
-                    "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                    "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                    "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                    "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES)
-                }
-            )
-            if st.form_submit_button("명부 수정사항 적용"):
-                st.session_state.df_final = edited_df
-                st.rerun()
+    st.caption("특수검진 제외는 여기서 체크 해제 후 [명부 수정사항 적용] 클릭")
+    
+    # [수정] 사이드바 명부 관리 - 키 삭제 로직 추가
+    with st.form("worker_main_form"):
+        edited_df = st.data_editor(
+            st.session_state.df_final,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="main_editor_sidebar",
+            column_config={
+                "퇴사여부": st.column_config.CheckboxColumn("퇴사", default=False, width="small"),
+                "특수검진_대상": st.column_config.CheckboxColumn("검진대상", default=True, width="small"),
+                "성명": st.column_config.TextColumn("성명", width="medium"),
+                "직책": st.column_config.SelectboxColumn("직책", options=ROLES, width="medium"),
+                "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST, width="medium"),
+                "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES)
+            }
+        )
+        if st.form_submit_button("명부 수정사항 적용"):
+            st.session_state.df_final = edited_df
+            # 중요: 변경된 내용을 바로 대시보드에 반영하기 위해 캐시 삭제
+            if "main_editor_sidebar" in st.session_state:
+                del st.session_state["main_editor_sidebar"]
+            st.rerun()
 
 # ==========================================
 # [메인 화면] 계산 및 대시보드
 # ==========================================
 
-# 1. 계산 로직
+# 1. 계산 로직 (사이드바에서 데이터 갱신 -> Rerun -> 여기서 df 새로 생성 -> 대시보드 반영)
 df = st.session_state.df_final.copy()
 today = date.today()
 
@@ -414,20 +416,20 @@ with tab1:
     if not target.empty:
         target['상태'] = target['다음_직무교육일'].apply(get_dday_status)
         
-        # [수정: Form 적용]
         with st.form("mgr_form"):
             edited_target = st.data_editor(
                 target[['성명','직책','최근_직무교육일','다음_직무교육일','상태']], 
                 use_container_width=True, hide_index=True,
+                key="mgr_editor", # Key 명시
                 column_config={
                     "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), 
                     "다음_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD", disabled=True)
                 }
             )
             if st.form_submit_button("변경사항 적용"):
-                # 수정된 날짜 반영 (타입 안전 변환)
                 if '최근_직무교육일' in edited_target.columns:
                     st.session_state.df_final.loc[target_indices, '최근_직무교육일'] = pd.to_datetime(edited_target['최근_직무교육일'])
+                    if "mgr_editor" in st.session_state: del st.session_state["mgr_editor"]
                     st.rerun()
     else: st.info("대상자 없음")
 
@@ -440,11 +442,11 @@ with tab2:
     if not target.empty:
         target['상태'] = target['다음_직무교육일'].apply(get_dday_status)
         
-        # [수정: Form 적용]
         with st.form("waste_form"):
             edited_target = st.data_editor(
                 target[['성명','부서','최근_직무교육일','다음_직무교육일','상태']], 
                 use_container_width=True, hide_index=True,
+                key="waste_editor",
                 column_config={
                     "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), 
                     "다음_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD", disabled=True)
@@ -452,6 +454,7 @@ with tab2:
             )
             if st.form_submit_button("변경사항 적용"):
                 st.session_state.df_final.loc[target_indices, '최근_직무교육일'] = pd.to_datetime(edited_target['최근_직무교육일'])
+                if "waste_editor" in st.session_state: del st.session_state["waste_editor"]
                 st.rerun()
     else: st.info("대상자 없음")
 
@@ -463,11 +466,11 @@ with tab3:
     target = view_df.loc[target_indices].copy()
     
     if not target.empty:
-        # [수정: Form 적용]
         with st.form("new_hire_form"):
             edited_target = st.data_editor(
                 target[['신규교육_이수','퇴사여부','성명','입사일','부서','담당관리감독자']],
                 hide_index=True, use_container_width=True,
+                key="new_edu_editor",
                 column_config={
                     "신규교육_이수": st.column_config.CheckboxColumn("이수 여부", width="small"),
                     "퇴사여부": st.column_config.CheckboxColumn("퇴사", disabled=True, width="small"),
@@ -479,6 +482,7 @@ with tab3:
             )
             if st.form_submit_button("변경사항 적용"):
                 st.session_state.df_final.loc[target_indices, '신규교육_이수'] = edited_target['신규교육_이수']
+                if "new_edu_editor" in st.session_state: del st.session_state["new_edu_editor"]
                 st.rerun()
     else: st.info("대상자 없음")
 
@@ -494,11 +498,11 @@ with tab4:
     if not target.empty:
         cols_to_show = ['성명','부서','특별교육_과목1','공통8H','과목1_온라인4H','과목1_감독자4H','특별교육_과목2','과목2_온라인4H','과목2_감독자4H']
         
-        # [수정: Form 적용]
         with st.form("special_edu_form"):
             edited_target = st.data_editor(
                 target[cols_to_show],
                 hide_index=True, use_container_width=True,
+                key="special_edu_editor",
                 column_config={
                     "성명": st.column_config.TextColumn(disabled=True),
                     "부서": st.column_config.TextColumn(disabled=True),
@@ -514,6 +518,7 @@ with tab4:
             if st.form_submit_button("변경사항 적용"):
                 check_cols = ['공통8H','과목1_온라인4H','과목1_감독자4H','과목2_온라인4H','과목2_감독자4H']
                 st.session_state.df_final.loc[target_indices, check_cols] = edited_target[check_cols]
+                if "special_edu_editor" in st.session_state: del st.session_state["special_edu_editor"]
                 st.rerun()
     else: st.info("특별교육 대상자가 없습니다. (검진대상 체크 여부 확인)")
 
@@ -526,12 +531,12 @@ with tab5:
     if not target.empty:
         target['상태'] = target.apply(lambda r: "🔴 검진필요" if r['검진단계']=="배치전(미실시)" else get_dday_status(r['다음_특수검진일']), axis=1)
         
-        # [수정: Form 적용]
         with st.form("health_form"):
             edited_target = st.data_editor(
                 target[['성명','부서','유해인자','검진단계','최근_특수검진일','다음_특수검진일','상태']],
                 use_container_width=True,
                 hide_index=True,
+                key="health_editor_fix",
                 column_config={
                     "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
                     "다음_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD", disabled=True),
@@ -544,6 +549,7 @@ with tab5:
                 if '최근_특수검진일' in edited_target.columns:
                     edited_target['최근_특수검진일'] = pd.to_datetime(edited_target['최근_특수검진일'])
                 st.session_state.df_final.loc[target_indices, compare_cols] = edited_target[compare_cols]
+                if "health_editor_fix" in st.session_state: del st.session_state["health_editor_fix"]
                 st.rerun()
     else: 
-        st.info("대상자가 없습니다. 왼쪽 사이드바 명부에서 검진대상을 체크해주세요. (유해인자가 '없음'인 경우 자동으로 제외됩니다)")
+        st.info("대상자가 없습니다.")
