@@ -7,12 +7,12 @@ import io
 # --- [1. 시스템 설정] ---
 st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️")
 
-# CSS: 사이드바 폭 조정 및 스타일
+# CSS: 사이드바 강제 폭 설정(min-width)을 삭제하여 모바일에서 자연스럽게 닫히도록 수정
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
     div.stButton > button {width: 100%; border-radius: 6px;}
-    [data-testid="stSidebar"] {min-width: 600px;} /* 컬럼이 많아져서 사이드바 폭을 조금 더 넓힘 */
+    /* 모바일 호환성을 위해 사이드바 최소 너비 설정 삭제함 */
 </style>
 """, unsafe_allow_html=True)
 
@@ -46,7 +46,6 @@ def sanitize_config_df(df):
     else: df['유해인자'] = df['유해인자'].fillna("없음")
     return df
 
-# [핵심 1] 날짜 더하기 함수
 def add_days(d, days):
     try: 
         if pd.isna(d) or str(d) == "NaT" or str(d).strip() == "": return None
@@ -54,7 +53,6 @@ def add_days(d, days):
         return d + timedelta(days=days)
     except: return None
 
-# [핵심 2] 직무교육 계산 함수
 def calculate_job_training_date(row):
     last_date = row.get('최근_직무교육일')
     if pd.isna(last_date) or str(last_date) == 'NaT' or str(last_date).strip() == "": return None
@@ -69,7 +67,6 @@ def calculate_job_training_date(row):
         else: return None
     except: return None
 
-# [핵심 3] D-Day 상태 표시 함수
 def get_dday_status(target_date):
     if pd.isna(target_date) or str(target_date) == 'NaT' or str(target_date).strip() == "": return "-"
     try:
@@ -137,7 +134,7 @@ if "-" not in supervisor_list:
 
 
 # ==========================================
-# [사이드바] 통합 메뉴
+# [사이드바] 좌측 관리자 메뉴 (다시 복귀)
 # ==========================================
 with st.sidebar:
     st.header("⚙️ 통합 관리자 메뉴")
@@ -150,7 +147,7 @@ with st.sidebar:
             st.session_state.clear()
             st.rerun()
             
-    with st.expander("☁️ GitHub 토큰 설정", expanded=False):
+    with st.expander("☁️ GitHub 설정", expanded=False):
         GITHUB_TOKEN = st.text_input("🔑 GitHub 토큰", type="password")
         REPO_NAME = st.text_input("📂 레포지토리 (user/repo)")
         DATA_FILE = "data.csv"
@@ -256,7 +253,6 @@ with st.sidebar:
                         st.rerun()
             except Exception as e: st.error(str(e))
 
-    st.caption("담당 관리감독자는 명부에 있는 '관리감독자'만 선택 가능합니다.")
     sorted_df = st.session_state.dept_config_final.sort_values('정렬순서')
     
     with st.form("dept_config_form"):
@@ -272,6 +268,7 @@ with st.sidebar:
         )
         if st.form_submit_button("설정 적용"):
             st.session_state.dept_config_final = edited_dept_config
+            # 업데이트 반영을 위해 캐시 삭제
             if "dept_editor_sidebar" in st.session_state:
                 del st.session_state["dept_editor_sidebar"]
             st.rerun()
@@ -285,9 +282,9 @@ with st.sidebar:
     st.divider()
 
     # -----------------------------------------------
-    # 2. 근로자 명부 관리 (요청사항 반영: 컬럼 순서 및 정리)
+    # 2. 근로자 명부 관리 (요청: 열 순서 정리 및 필터링)
     # -----------------------------------------------
-    with st.expander("📝 근로자 명부 관리 (파일 병합)", expanded=True):
+    with st.expander("📝 근로자 명부 관리 (파일/수정)", expanded=True):
         with st.popover("📂 명부 파일 등록 (Excel/CSV)"):
             up_file = st.file_uploader("파일 선택", type=['csv', 'xlsx'], key="worker_up")
             if up_file:
@@ -307,7 +304,7 @@ with st.sidebar:
 
     st.caption("특수검진 제외는 여기서 체크 해제 후 [명부 수정사항 적용] 클릭")
     
-    # [수정] 요청하신 순서대로 컬럼 정의
+    # [수정] 요청하신 열 순서 정의
     view_cols = [
         '직책', '성명', '부서', '입사일', '퇴사여부', 
         '최근_직무교육일', '신규교육_이수', 
@@ -316,10 +313,8 @@ with st.sidebar:
     ]
 
     with st.form("worker_main_form"):
-        # 여기서 df_final의 전체가 아닌, view_cols만 선택해서 에디터에 보여줍니다.
-        # (나머지 열은 보이지 않게 처리됨)
         edited_df = st.data_editor(
-            st.session_state.df_final[view_cols],
+            st.session_state.df_final[view_cols], # 지정된 열만 표시
             num_rows="dynamic",
             use_container_width=True,
             key="main_editor_sidebar",
@@ -342,9 +337,9 @@ with st.sidebar:
             }
         )
         if st.form_submit_button("명부 수정사항 적용"):
-            # 수정된 내용(view_cols에 해당하는 부분)만 원본 데이터에 업데이트
+            # 수정된 열 데이터만 원본에 업데이트
             st.session_state.df_final[view_cols] = edited_df
-            
+            # 업데이트 반영을 위해 캐시 삭제
             if "main_editor_sidebar" in st.session_state:
                 del st.session_state["main_editor_sidebar"]
             st.rerun()
@@ -431,7 +426,7 @@ with tab1:
             edited_target = st.data_editor(
                 target[['성명','직책','최근_직무교육일','다음_직무교육일','상태']], 
                 use_container_width=True, hide_index=True,
-                key="mgr_editor", # Key 명시
+                key="mgr_editor", 
                 column_config={
                     "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"), 
                     "다음_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD", disabled=True)
