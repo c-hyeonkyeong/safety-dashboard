@@ -12,7 +12,7 @@ st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
     div.stButton > button {width: 100%; border-radius: 6px;}
-    [data-testid="stSidebar"] {min-width: 500px;}
+    [data-testid="stSidebar"] {min-width: 600px;} /* 컬럼이 많아져서 사이드바 폭을 조금 더 넓힘 */
 </style>
 """, unsafe_allow_html=True)
 
@@ -259,7 +259,6 @@ with st.sidebar:
     st.caption("담당 관리감독자는 명부에 있는 '관리감독자'만 선택 가능합니다.")
     sorted_df = st.session_state.dept_config_final.sort_values('정렬순서')
     
-    # [수정] 사이드바 부서 설정 - 키 삭제 로직 추가
     with st.form("dept_config_form"):
         edited_dept_config = st.data_editor(
             sorted_df, num_rows="dynamic", key="dept_editor_sidebar", use_container_width=True, hide_index=True,
@@ -273,7 +272,6 @@ with st.sidebar:
         )
         if st.form_submit_button("설정 적용"):
             st.session_state.dept_config_final = edited_dept_config
-            # 중요: 변경된 내용을 바로 대시보드에 반영하기 위해 캐시 삭제
             if "dept_editor_sidebar" in st.session_state:
                 del st.session_state["dept_editor_sidebar"]
             st.rerun()
@@ -287,7 +285,7 @@ with st.sidebar:
     st.divider()
 
     # -----------------------------------------------
-    # 2. 근로자 명부 관리
+    # 2. 근로자 명부 관리 (요청사항 반영: 컬럼 순서 및 정리)
     # -----------------------------------------------
     with st.expander("📝 근로자 명부 관리 (파일 병합)", expanded=True):
         with st.popover("📂 명부 파일 등록 (Excel/CSV)"):
@@ -309,10 +307,19 @@ with st.sidebar:
 
     st.caption("특수검진 제외는 여기서 체크 해제 후 [명부 수정사항 적용] 클릭")
     
-    # [수정] 사이드바 명부 관리 - 키 삭제 로직 추가
+    # [수정] 요청하신 순서대로 컬럼 정의
+    view_cols = [
+        '직책', '성명', '부서', '입사일', '퇴사여부', 
+        '최근_직무교육일', '신규교육_이수', 
+        '특수검진_대상', '검진단계', '최근_특수검진일',
+        '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H'
+    ]
+
     with st.form("worker_main_form"):
+        # 여기서 df_final의 전체가 아닌, view_cols만 선택해서 에디터에 보여줍니다.
+        # (나머지 열은 보이지 않게 처리됨)
         edited_df = st.data_editor(
-            st.session_state.df_final,
+            st.session_state.df_final[view_cols],
             num_rows="dynamic",
             use_container_width=True,
             key="main_editor_sidebar",
@@ -325,12 +332,19 @@ with st.sidebar:
                 "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
                 "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
                 "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES)
+                "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES),
+                "신규교육_이수": st.column_config.CheckboxColumn("신규이수", width="small"),
+                "공통8H": st.column_config.CheckboxColumn("공통8H", width="small"),
+                "과목1_온라인4H": st.column_config.CheckboxColumn("1-온라인", width="small"),
+                "과목1_감독자4H": st.column_config.CheckboxColumn("1-감독자", width="small"),
+                "과목2_온라인4H": st.column_config.CheckboxColumn("2-온라인", width="small"),
+                "과목2_감독자4H": st.column_config.CheckboxColumn("2-감독자", width="small")
             }
         )
         if st.form_submit_button("명부 수정사항 적용"):
-            st.session_state.df_final = edited_df
-            # 중요: 변경된 내용을 바로 대시보드에 반영하기 위해 캐시 삭제
+            # 수정된 내용(view_cols에 해당하는 부분)만 원본 데이터에 업데이트
+            st.session_state.df_final[view_cols] = edited_df
+            
             if "main_editor_sidebar" in st.session_state:
                 del st.session_state["main_editor_sidebar"]
             st.rerun()
@@ -339,11 +353,9 @@ with st.sidebar:
 # [메인 화면] 계산 및 대시보드
 # ==========================================
 
-# 1. 계산 로직 (사이드바에서 데이터 갱신 -> Rerun -> 여기서 df 새로 생성 -> 대시보드 반영)
 df = st.session_state.df_final.copy()
 today = date.today()
 
-# 이름 없는 빈 줄 제거
 if '성명' in df.columns:
     df = df.dropna(subset=['성명'])
     df = df[df['성명'].astype(str).str.strip() != '']
@@ -364,7 +376,6 @@ df['입사일_dt'] = pd.to_datetime(df['입사일'].astype(str), errors='coerce'
 df['입사연도'] = df['입사일_dt'].dt.year
 df['법적_신규자'] = df['입사일_dt'].apply(lambda x: (pd.Timestamp(today) - x).days < 90 if pd.notnull(x) else False)
 
-# [함수 사용] 직무교육일 계산
 df['다음_직무교육일'] = df.apply(calculate_job_training_date, axis=1)
 
 def calc_next_health(row):
