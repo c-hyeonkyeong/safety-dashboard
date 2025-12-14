@@ -5,16 +5,18 @@ from github import Github
 import io
 
 # --- [1. 시스템 설정] ---
-st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️")
+# initial_sidebar_state="expanded"로 설정하여 처음엔 열려있게 함
+st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️", initial_sidebar_state="expanded")
 
-# CSS: PC 화면에서는 사이드바 폭 450px 고정, 모바일은 자동
+# CSS: PC 사이드바 너비를 450px로 조정하되, '닫힘' 상태를 방해하지 않도록 수정
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
     div.stButton > button {width: 100%; border-radius: 6px;}
     
+    /* PC 화면 (너비 992px 이상)에서, 사이드바가 '열려 있을 때'만 너비 고정 */
     @media (min-width: 992px) {
-        [data-testid="stSidebar"] {
+        section[data-testid="stSidebar"][aria-expanded="true"] {
             min-width: 450px !important;
             max-width: 450px !important;
         }
@@ -138,7 +140,7 @@ supervisor_list = sorted(
 if "-" not in supervisor_list:
     supervisor_list.insert(0, "-")
 
-# [중요 수정] 사이드바에서 사용하기 위해 공통 데이터 매핑을 위로 이동
+# [공통 데이터 정의 위치 이동]
 DEPT_S1 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목1']))
 DEPT_S2 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목2']))
 DEPT_FAC = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['유해인자']))
@@ -152,208 +154,206 @@ DEPTS_LIST = list(st.session_state.dept_config_final['부서명'])
 with st.sidebar:
     st.header("⚙️ 통합 관리자 메뉴")
     
-    # 메뉴 전체를 끄고 켤 수 있는 스위치
-    show_manager_menu = st.toggle("🎛️ 관리자 메뉴 전체 보기", value=True)
+    col_btn1, col_btn2, col_btn3 = st.columns(3)
     
-    st.divider()
+    with col_btn1:
+        if st.button("🔄 새로고침", type="primary"):
+            st.cache_data.clear()
+            st.session_state.clear()
+            st.rerun()
+            
+    # 1. GitHub 설정 (접이식)
+    with st.expander("☁️ GitHub 연동 설정", expanded=False):
+        GITHUB_TOKEN = st.text_input("🔑 GitHub 토큰", type="password")
+        REPO_NAME = st.text_input("📂 레포지토리 (user/repo)")
+        DATA_FILE = "data.csv"
+        CONFIG_FILE = "config.csv"
 
-    if show_manager_menu:
-        # 1. 상단 버튼 그룹
-        col_btn1, col_btn2, col_btn3 = st.columns(3)
-        with col_btn1:
-            if st.button("🔄 새로고침", type="primary"):
-                st.cache_data.clear()
-                st.session_state.clear()
-                st.rerun()
-        
-        # 2. GitHub 설정 (접이식)
-        with st.expander("☁️ GitHub 연동 설정", expanded=False):
-            GITHUB_TOKEN = st.text_input("🔑 GitHub 토큰", type="password")
-            REPO_NAME = st.text_input("📂 레포지토리 (user/repo)")
-            DATA_FILE = "data.csv"
-            CONFIG_FILE = "config.csv"
+        def get_github_repo():
+            if not GITHUB_TOKEN or not REPO_NAME: return None
+            try: return Github(GITHUB_TOKEN).get_repo(REPO_NAME)
+            except: return None
 
-            def get_github_repo():
-                if not GITHUB_TOKEN or not REPO_NAME: return None
-                try: return Github(GITHUB_TOKEN).get_repo(REPO_NAME)
-                except: return None
+        def save_all_to_github(data_df, config_df):
+            repo = get_github_repo()
+            if not repo: 
+                st.error("토큰 필요")
+                return
+            try:
+                save_df = data_df.copy()
+                date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일', '다음_직무교육일', '다음_특수검진일']
+                for col in date_cols:
+                    if col in save_df.columns:
+                        save_df[col] = save_df[col].apply(lambda x: x.strftime('%Y-%m-%d') if not pd.isna(x) else '')
 
-            def save_all_to_github(data_df, config_df):
-                repo = get_github_repo()
-                if not repo: 
-                    st.error("토큰 필요")
-                    return
-                try:
-                    save_df = data_df.copy()
-                    date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일', '다음_직무교육일', '다음_특수검진일']
-                    for col in date_cols:
-                        if col in save_df.columns:
-                            save_df[col] = save_df[col].apply(lambda x: x.strftime('%Y-%m-%d') if not pd.isna(x) else '')
-
-                    data_content = save_df.to_csv(index=False)
-                    try:
-                        contents = repo.get_contents(DATA_FILE)
-                        repo.update_file(DATA_FILE, f"Update data: {datetime.now()}", data_content, contents.sha)
-                    except:
-                        repo.create_file(DATA_FILE, "Init data", data_content)
-                    
-                    config_content = config_df.to_csv(index=False)
-                    try:
-                        contents = repo.get_contents(CONFIG_FILE)
-                        repo.update_file(CONFIG_FILE, f"Update config: {datetime.now()}", config_content, contents.sha)
-                    except:
-                        repo.create_file(CONFIG_FILE, "Init config", config_content)
-                    st.toast("✅ 저장 완료!", icon="☁️")
-                except Exception as e:
-                    st.error(f"저장 실패: {e}")
-
-            def load_all_from_github():
-                repo = get_github_repo()
-                if not repo: return None, None
-                loaded_data, loaded_config = None, None
+                data_content = save_df.to_csv(index=False)
                 try:
                     contents = repo.get_contents(DATA_FILE)
-                    csv_string = contents.decoded_content.decode("utf-8")
-                    loaded_data = pd.read_csv(io.StringIO(csv_string))
-                    
-                    date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
-                    for col in date_cols:
-                        if col in loaded_data.columns:
-                            loaded_data[col] = pd.to_datetime(loaded_data[col].astype(str), errors='coerce')
-                    
-                    if '검진단계' not in loaded_data.columns: loaded_data['검진단계'] = "배치전(미실시)"
-                    else: loaded_data['검진단계'] = loaded_data['검진단계'].fillna("배치전(미실시)")
-
-                except: pass
+                    repo.update_file(DATA_FILE, f"Update data: {datetime.now()}", data_content, contents.sha)
+                except:
+                    repo.create_file(DATA_FILE, "Init data", data_content)
+                
+                config_content = config_df.to_csv(index=False)
                 try:
                     contents = repo.get_contents(CONFIG_FILE)
-                    csv_string = contents.decoded_content.decode("utf-8")
-                    loaded_config = pd.read_csv(io.StringIO(csv_string))
-                    loaded_config = sanitize_config_df(loaded_config)
-                except: pass
-                return loaded_data, loaded_config
+                    repo.update_file(CONFIG_FILE, f"Update config: {datetime.now()}", config_content, contents.sha)
+                except:
+                    repo.create_file(CONFIG_FILE, "Init config", config_content)
+                st.toast("✅ 저장 완료!", icon="☁️")
+            except Exception as e:
+                st.error(f"저장 실패: {e}")
 
-            col_s1, col_s2 = st.columns(2)
-            with col_s1:
-                if st.button("📂 불러오기"):
-                    ld, lc = load_all_from_github()
-                    if ld is not None: 
-                        st.session_state.df_final = ld
-                        st.toast("로드 완료!", icon="✅")
-                    if lc is not None: st.session_state.dept_config_final = lc
-                    st.rerun()
-            with col_s2:
-                if st.button("💾 저장하기"):
-                    if 'df_final' in st.session_state and 'dept_config_final' in st.session_state:
-                        save_all_to_github(st.session_state.df_final, st.session_state.dept_config_final)
-                    else:
-                        st.error("데이터 없음")
+        def load_all_from_github():
+            repo = get_github_repo()
+            if not repo: return None, None
+            loaded_data, loaded_config = None, None
+            try:
+                contents = repo.get_contents(DATA_FILE)
+                csv_string = contents.decoded_content.decode("utf-8")
+                loaded_data = pd.read_csv(io.StringIO(csv_string))
+                
+                date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
+                for col in date_cols:
+                    if col in loaded_data.columns:
+                        loaded_data[col] = pd.to_datetime(loaded_data[col].astype(str), errors='coerce')
+                
+                if '검진단계' not in loaded_data.columns: loaded_data['검진단계'] = "배치전(미실시)"
+                else: loaded_data['검진단계'] = loaded_data['검진단계'].fillna("배치전(미실시)")
 
-        # -----------------------------------------------
-        # 3. 부서 설정 (접이식)
-        # -----------------------------------------------
-        with st.expander("🛠️ 부서 및 교육 매핑 설정", expanded=False):
-            with st.popover("📂 설정 파일 업로드"):
-                dept_file = st.file_uploader("파일 선택", type=['csv', 'xlsx'], key="dept_up")
-                if dept_file:
-                    try:
-                        new_d = pd.read_csv(dept_file) if dept_file.name.endswith('.csv') else pd.read_excel(dept_file)
-                        if st.button("부서 설정 덮어쓰기"):
-                            if '부서명' not in new_d.columns: st.error("부서명 컬럼 없음")
-                            else:
-                                new_d = new_d.rename(columns={'특별교육 1':'특별교육과목1', '특별교육 2':'특별교육과목2'})
-                                new_d = sanitize_config_df(new_d)
-                                cols = ['부서명', '특별교육과목1', '특별교육과목2', '유해인자', '담당관리감독자']
-                                for c in cols: 
-                                    if c not in new_d.columns: new_d[c] = "해당없음" if "특별" in c else ""
-                                final_d = pd.concat([st.session_state.dept_config_final[cols], new_d[cols]]).drop_duplicates(['부서명'], keep='last').reset_index(drop=True)
-                                final_d.insert(0, '정렬순서', range(1, len(final_d)+1))
-                                st.session_state.dept_config_final = final_d
-                                st.rerun()
-                    except Exception as e: st.error(str(e))
+            except: pass
+            try:
+                contents = repo.get_contents(CONFIG_FILE)
+                csv_string = contents.decoded_content.decode("utf-8")
+                loaded_config = pd.read_csv(io.StringIO(csv_string))
+                loaded_config = sanitize_config_df(loaded_config)
+            except: pass
+            return loaded_data, loaded_config
 
-            st.caption("담당 관리감독자는 명부에 있는 '관리감독자'만 선택 가능합니다.")
-            sorted_df = st.session_state.dept_config_final.sort_values('정렬순서')
-            
-            with st.form("dept_config_form"):
-                edited_dept_config = st.data_editor(
-                    sorted_df, num_rows="dynamic", key="dept_editor_sidebar", use_container_width=True, hide_index=True,
-                    column_config={
-                        "부서명": st.column_config.TextColumn("부서명"),
-                        "담당관리감독자": st.column_config.SelectboxColumn("담당 관리감독자", options=supervisor_list, width="medium"),
-                        "특별교육과목1": st.column_config.SelectboxColumn("특별교육 1", width="medium", options=SPECIAL_EDU_OPTIONS),
-                        "특별교육과목2": st.column_config.SelectboxColumn("특별교육 2", width="medium", options=SPECIAL_EDU_OPTIONS),
-                        "유해인자": st.column_config.TextColumn("유해인자")
-                    }
-                )
-                if st.form_submit_button("설정 적용"):
-                    st.session_state.dept_config_final = edited_dept_config
-                    if "dept_editor_sidebar" in st.session_state:
-                        del st.session_state["dept_editor_sidebar"]
-                    st.rerun()
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            if st.button("📂 불러오기"):
+                ld, lc = load_all_from_github()
+                if ld is not None: 
+                    st.session_state.df_final = ld
+                    st.toast("로드 완료!", icon="✅")
+                if lc is not None: st.session_state.dept_config_final = lc
+                st.rerun()
+        with col_s2:
+            if st.button("💾 저장하기"):
+                if 'df_final' in st.session_state and 'dept_config_final' in st.session_state:
+                    save_all_to_github(st.session_state.df_final, st.session_state.dept_config_final)
+                else:
+                    st.error("데이터 없음")
 
-        # -----------------------------------------------
-        # 4. 근로자 명부 관리 (접이식)
-        # -----------------------------------------------
-        with st.expander("📝 근로자 명부 관리", expanded=False):
-            with st.popover("📂 명부 파일 등록 (Excel/CSV)"):
-                up_file = st.file_uploader("파일 선택", type=['csv', 'xlsx'], key="worker_up")
-                if up_file:
-                    try:
-                        new_df = pd.read_csv(up_file) if up_file.name.endswith('.csv') else pd.read_excel(up_file)
-                        if st.button("명부 병합하기"):
-                            if '성명' not in new_df.columns: st.error("성명 컬럼 필수")
-                            else:
-                                for c in st.session_state.df_final.columns:
-                                    if c not in new_df.columns: new_df[c] = None
-                                if '특수검진_대상' in new_df.columns:
-                                    new_df['특수검진_대상'] = new_df['특수검진_대상'].fillna(True).astype(bool)
-                                else: new_df['특수검진_대상'] = True
-                                st.session_state.df_final = pd.concat([st.session_state.df_final, new_df[st.session_state.df_final.columns]], ignore_index=True)
-                                st.rerun()
-                    except Exception as e: st.error(str(e))
+    with col_btn3:
+         # 상단 저장 버튼 (중복 편의성)
+         pass
 
-            st.caption("특수검진 제외는 여기서 체크 해제 후 [명부 수정사항 적용] 클릭")
-            
-            view_cols = [
-                '직책', '성명', '부서', '입사일', '퇴사여부', 
-                '최근_직무교육일', '신규교육_이수', 
-                '특수검진_대상', '검진단계', '최근_특수검진일',
-                '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H'
-            ]
+    st.divider()
 
-            with st.form("worker_main_form"):
-                edited_df = st.data_editor(
-                    st.session_state.df_final[view_cols],
-                    num_rows="dynamic",
-                    use_container_width=True,
-                    key="main_editor_sidebar",
-                    column_config={
-                        "퇴사여부": st.column_config.CheckboxColumn("퇴사", default=False, width="small"),
-                        "특수검진_대상": st.column_config.CheckboxColumn("검진대상", default=True, width="small"),
-                        "성명": st.column_config.TextColumn("성명", width="medium"),
-                        "직책": st.column_config.SelectboxColumn("직책", options=ROLES, width="medium"),
-                        "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST, width="medium"),
-                        "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                        "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                        "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                        "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES),
-                        "신규교육_이수": st.column_config.CheckboxColumn("신규이수", width="small"),
-                        "공통8H": st.column_config.CheckboxColumn("공통8H", width="small"),
-                        "과목1_온라인4H": st.column_config.CheckboxColumn("1-온라인", width="small"),
-                        "과목1_감독자4H": st.column_config.CheckboxColumn("1-감독자", width="small"),
-                        "과목2_온라인4H": st.column_config.CheckboxColumn("2-온라인", width="small"),
-                        "과목2_감독자4H": st.column_config.CheckboxColumn("2-감독자", width="small")
-                    }
-                )
-                if st.form_submit_button("명부 수정사항 적용"):
-                    st.session_state.df_final[view_cols] = edited_df
-                    if "main_editor_sidebar" in st.session_state:
-                        del st.session_state["main_editor_sidebar"]
-                    st.rerun()
+    # -----------------------------------------------
+    # 2. 부서 및 교육 매핑 설정 (접이식)
+    # -----------------------------------------------
+    with st.expander("🛠️ 부서 및 교육 매핑 설정", expanded=False):
+        with st.popover("📂 설정 파일 업로드"):
+            dept_file = st.file_uploader("파일 선택", type=['csv', 'xlsx'], key="dept_up")
+            if dept_file:
+                try:
+                    new_d = pd.read_csv(dept_file) if dept_file.name.endswith('.csv') else pd.read_excel(dept_file)
+                    if st.button("부서 설정 덮어쓰기"):
+                        if '부서명' not in new_d.columns: st.error("부서명 컬럼 없음")
+                        else:
+                            new_d = new_d.rename(columns={'특별교육 1':'특별교육과목1', '특별교육 2':'특별교육과목2'})
+                            new_d = sanitize_config_df(new_d)
+                            cols = ['부서명', '특별교육과목1', '특별교육과목2', '유해인자', '담당관리감독자']
+                            for c in cols: 
+                                if c not in new_d.columns: new_d[c] = "해당없음" if "특별" in c else ""
+                            final_d = pd.concat([st.session_state.dept_config_final[cols], new_d[cols]]).drop_duplicates(['부서명'], keep='last').reset_index(drop=True)
+                            final_d.insert(0, '정렬순서', range(1, len(final_d)+1))
+                            st.session_state.dept_config_final = final_d
+                            st.rerun()
+                except Exception as e: st.error(str(e))
 
-    else:
-        st.info("관리자 메뉴가 숨겨졌습니다. (상단 스위치로 활성화)")
+        st.caption("담당 관리감독자는 명부에 있는 '관리감독자'만 선택 가능합니다.")
+        sorted_df = st.session_state.dept_config_final.sort_values('정렬순서')
+        
+        with st.form("dept_config_form"):
+            edited_dept_config = st.data_editor(
+                sorted_df, num_rows="dynamic", key="dept_editor_sidebar", use_container_width=True, hide_index=True,
+                column_config={
+                    "부서명": st.column_config.TextColumn("부서명"),
+                    "담당관리감독자": st.column_config.SelectboxColumn("담당 관리감독자", options=supervisor_list, width="medium"),
+                    "특별교육과목1": st.column_config.SelectboxColumn("특별교육 1", width="medium", options=SPECIAL_EDU_OPTIONS),
+                    "특별교육과목2": st.column_config.SelectboxColumn("특별교육 2", width="medium", options=SPECIAL_EDU_OPTIONS),
+                    "유해인자": st.column_config.TextColumn("유해인자")
+                }
+            )
+            if st.form_submit_button("설정 적용"):
+                st.session_state.dept_config_final = edited_dept_config
+                if "dept_editor_sidebar" in st.session_state:
+                    del st.session_state["dept_editor_sidebar"]
+                st.rerun()
+
+    # -----------------------------------------------
+    # 3. 근로자 명부 관리 (접이식)
+    # -----------------------------------------------
+    with st.expander("📝 근로자 명부 관리", expanded=False):
+        with st.popover("📂 명부 파일 등록 (Excel/CSV)"):
+            up_file = st.file_uploader("파일 선택", type=['csv', 'xlsx'], key="worker_up")
+            if up_file:
+                try:
+                    new_df = pd.read_csv(up_file) if up_file.name.endswith('.csv') else pd.read_excel(up_file)
+                    if st.button("명부 병합하기"):
+                        if '성명' not in new_df.columns: st.error("성명 컬럼 필수")
+                        else:
+                            for c in st.session_state.df_final.columns:
+                                if c not in new_df.columns: new_df[c] = None
+                            if '특수검진_대상' in new_df.columns:
+                                new_df['특수검진_대상'] = new_df['특수검진_대상'].fillna(True).astype(bool)
+                            else: new_df['특수검진_대상'] = True
+                            st.session_state.df_final = pd.concat([st.session_state.df_final, new_df[st.session_state.df_final.columns]], ignore_index=True)
+                            st.rerun()
+                except Exception as e: st.error(str(e))
+
+        st.caption("특수검진 제외는 여기서 체크 해제 후 [명부 수정사항 적용] 클릭")
+        
+        view_cols = [
+            '직책', '성명', '부서', '입사일', '퇴사여부', 
+            '최근_직무교육일', '신규교육_이수', 
+            '특수검진_대상', '검진단계', '최근_특수검진일',
+            '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H'
+        ]
+
+        with st.form("worker_main_form"):
+            edited_df = st.data_editor(
+                st.session_state.df_final[view_cols],
+                num_rows="dynamic",
+                use_container_width=True,
+                key="main_editor_sidebar",
+                column_config={
+                    "퇴사여부": st.column_config.CheckboxColumn("퇴사", default=False, width="small"),
+                    "특수검진_대상": st.column_config.CheckboxColumn("검진대상", default=True, width="small"),
+                    "성명": st.column_config.TextColumn("성명", width="medium"),
+                    "직책": st.column_config.SelectboxColumn("직책", options=ROLES, width="medium"),
+                    "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST, width="medium"),
+                    "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                    "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                    "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                    "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES),
+                    "신규교육_이수": st.column_config.CheckboxColumn("신규이수", width="small"),
+                    "공통8H": st.column_config.CheckboxColumn("공통8H", width="small"),
+                    "과목1_온라인4H": st.column_config.CheckboxColumn("1-온라인", width="small"),
+                    "과목1_감독자4H": st.column_config.CheckboxColumn("1-감독자", width="small"),
+                    "과목2_온라인4H": st.column_config.CheckboxColumn("2-온라인", width="small"),
+                    "과목2_감독자4H": st.column_config.CheckboxColumn("2-감독자", width="small")
+                }
+            )
+            if st.form_submit_button("명부 수정사항 적용"):
+                st.session_state.df_final[view_cols] = edited_df
+                if "main_editor_sidebar" in st.session_state:
+                    del st.session_state["main_editor_sidebar"]
+                st.rerun()
+
 
 # ==========================================
 # [메인 화면] 계산 및 대시보드
