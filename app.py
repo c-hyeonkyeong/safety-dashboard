@@ -7,12 +7,19 @@ import io
 # --- [1. 시스템 설정] ---
 st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️")
 
-# CSS: 사이드바 강제 폭 설정(min-width)을 삭제하여 모바일에서 자연스럽게 닫히도록 수정
+# CSS: PC에서는 넓게(600px), 모바일에서는 자동으로(100% or auto) 설정하는 미디어 쿼리 적용
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
     div.stButton > button {width: 100%; border-radius: 6px;}
-    /* 모바일 호환성을 위해 사이드바 최소 너비 설정 삭제함 */
+    
+    /* PC 화면 (너비 992px 이상)에서만 사이드바를 넓게 고정 */
+    @media (min-width: 992px) {
+        [data-testid="stSidebar"] {
+            min-width: 600px !important;
+            max-width: 800px !important;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -134,7 +141,7 @@ if "-" not in supervisor_list:
 
 
 # ==========================================
-# [사이드바] 좌측 관리자 메뉴 (다시 복귀)
+# [사이드바] 통합 메뉴
 # ==========================================
 with st.sidebar:
     st.header("⚙️ 통합 관리자 메뉴")
@@ -147,7 +154,7 @@ with st.sidebar:
             st.session_state.clear()
             st.rerun()
             
-    with st.expander("☁️ GitHub 설정", expanded=False):
+    with st.expander("☁️ GitHub 연동 설정", expanded=False):
         GITHUB_TOKEN = st.text_input("🔑 GitHub 토큰", type="password")
         REPO_NAME = st.text_input("📂 레포지토리 (user/repo)")
         DATA_FILE = "data.csv"
@@ -232,7 +239,7 @@ with st.sidebar:
     st.divider()
 
     # -----------------------------------------------
-    # 1. 부서 및 교육 매핑 설정
+    # 1. 부서 및 교육 매핑 설정 (전체 접이식 적용)
     # -----------------------------------------------
     with st.expander("🛠️ 부서 및 교육 매핑 설정", expanded=False):
         dept_file = st.file_uploader("설정 파일 (xlsx/csv)", type=['csv', 'xlsx'], key="dept_up")
@@ -253,25 +260,25 @@ with st.sidebar:
                         st.rerun()
             except Exception as e: st.error(str(e))
 
-    sorted_df = st.session_state.dept_config_final.sort_values('정렬순서')
-    
-    with st.form("dept_config_form"):
-        edited_dept_config = st.data_editor(
-            sorted_df, num_rows="dynamic", key="dept_editor_sidebar", use_container_width=True, hide_index=True,
-            column_config={
-                "부서명": st.column_config.TextColumn("부서명"),
-                "담당관리감독자": st.column_config.SelectboxColumn("담당 관리감독자", options=supervisor_list, width="medium"),
-                "특별교육과목1": st.column_config.SelectboxColumn("특별교육 1", width="medium", options=SPECIAL_EDU_OPTIONS),
-                "특별교육과목2": st.column_config.SelectboxColumn("특별교육 2", width="medium", options=SPECIAL_EDU_OPTIONS),
-                "유해인자": st.column_config.TextColumn("유해인자")
-            }
-        )
-        if st.form_submit_button("설정 적용"):
-            st.session_state.dept_config_final = edited_dept_config
-            # 업데이트 반영을 위해 캐시 삭제
-            if "dept_editor_sidebar" in st.session_state:
-                del st.session_state["dept_editor_sidebar"]
-            st.rerun()
+        st.caption("담당 관리감독자는 명부에 있는 '관리감독자'만 선택 가능합니다.")
+        sorted_df = st.session_state.dept_config_final.sort_values('정렬순서')
+        
+        with st.form("dept_config_form"):
+            edited_dept_config = st.data_editor(
+                sorted_df, num_rows="dynamic", key="dept_editor_sidebar", use_container_width=True, hide_index=True,
+                column_config={
+                    "부서명": st.column_config.TextColumn("부서명"),
+                    "담당관리감독자": st.column_config.SelectboxColumn("담당 관리감독자", options=supervisor_list, width="medium"),
+                    "특별교육과목1": st.column_config.SelectboxColumn("특별교육 1", width="medium", options=SPECIAL_EDU_OPTIONS),
+                    "특별교육과목2": st.column_config.SelectboxColumn("특별교육 2", width="medium", options=SPECIAL_EDU_OPTIONS),
+                    "유해인자": st.column_config.TextColumn("유해인자")
+                }
+            )
+            if st.form_submit_button("설정 적용"):
+                st.session_state.dept_config_final = edited_dept_config
+                if "dept_editor_sidebar" in st.session_state:
+                    del st.session_state["dept_editor_sidebar"]
+                st.rerun()
 
     DEPT_S1 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목1']))
     DEPT_S2 = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['특별교육과목2']))
@@ -279,12 +286,10 @@ with st.sidebar:
     DEPT_SUP = dict(zip(st.session_state.dept_config_final['부서명'], st.session_state.dept_config_final['담당관리감독자']))
     DEPTS_LIST = list(st.session_state.dept_config_final['부서명'])
 
-    st.divider()
-
     # -----------------------------------------------
-    # 2. 근로자 명부 관리 (요청: 열 순서 정리 및 필터링)
+    # 2. 근로자 명부 관리 (전체 접이식 적용 + 열 순서 정리)
     # -----------------------------------------------
-    with st.expander("📝 근로자 명부 관리 (파일/수정)", expanded=True):
+    with st.expander("📝 근로자 명부 관리", expanded=False):
         with st.popover("📂 명부 파일 등록 (Excel/CSV)"):
             up_file = st.file_uploader("파일 선택", type=['csv', 'xlsx'], key="worker_up")
             if up_file:
@@ -302,47 +307,44 @@ with st.sidebar:
                             st.rerun()
                 except Exception as e: st.error(str(e))
 
-    st.caption("특수검진 제외는 여기서 체크 해제 후 [명부 수정사항 적용] 클릭")
-    
-    # [수정] 요청하신 열 순서 정의
-    view_cols = [
-        '직책', '성명', '부서', '입사일', '퇴사여부', 
-        '최근_직무교육일', '신규교육_이수', 
-        '특수검진_대상', '검진단계', '최근_특수검진일',
-        '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H'
-    ]
+        st.caption("특수검진 제외는 여기서 체크 해제 후 [명부 수정사항 적용] 클릭")
+        
+        view_cols = [
+            '직책', '성명', '부서', '입사일', '퇴사여부', 
+            '최근_직무교육일', '신규교육_이수', 
+            '특수검진_대상', '검진단계', '최근_특수검진일',
+            '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H'
+        ]
 
-    with st.form("worker_main_form"):
-        edited_df = st.data_editor(
-            st.session_state.df_final[view_cols], # 지정된 열만 표시
-            num_rows="dynamic",
-            use_container_width=True,
-            key="main_editor_sidebar",
-            column_config={
-                "퇴사여부": st.column_config.CheckboxColumn("퇴사", default=False, width="small"),
-                "특수검진_대상": st.column_config.CheckboxColumn("검진대상", default=True, width="small"),
-                "성명": st.column_config.TextColumn("성명", width="medium"),
-                "직책": st.column_config.SelectboxColumn("직책", options=ROLES, width="medium"),
-                "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST, width="medium"),
-                "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES),
-                "신규교육_이수": st.column_config.CheckboxColumn("신규이수", width="small"),
-                "공통8H": st.column_config.CheckboxColumn("공통8H", width="small"),
-                "과목1_온라인4H": st.column_config.CheckboxColumn("1-온라인", width="small"),
-                "과목1_감독자4H": st.column_config.CheckboxColumn("1-감독자", width="small"),
-                "과목2_온라인4H": st.column_config.CheckboxColumn("2-온라인", width="small"),
-                "과목2_감독자4H": st.column_config.CheckboxColumn("2-감독자", width="small")
-            }
-        )
-        if st.form_submit_button("명부 수정사항 적용"):
-            # 수정된 열 데이터만 원본에 업데이트
-            st.session_state.df_final[view_cols] = edited_df
-            # 업데이트 반영을 위해 캐시 삭제
-            if "main_editor_sidebar" in st.session_state:
-                del st.session_state["main_editor_sidebar"]
-            st.rerun()
+        with st.form("worker_main_form"):
+            edited_df = st.data_editor(
+                st.session_state.df_final[view_cols],
+                num_rows="dynamic",
+                use_container_width=True,
+                key="main_editor_sidebar",
+                column_config={
+                    "퇴사여부": st.column_config.CheckboxColumn("퇴사", default=False, width="small"),
+                    "특수검진_대상": st.column_config.CheckboxColumn("검진대상", default=True, width="small"),
+                    "성명": st.column_config.TextColumn("성명", width="medium"),
+                    "직책": st.column_config.SelectboxColumn("직책", options=ROLES, width="medium"),
+                    "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST, width="medium"),
+                    "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                    "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                    "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                    "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES),
+                    "신규교육_이수": st.column_config.CheckboxColumn("신규이수", width="small"),
+                    "공통8H": st.column_config.CheckboxColumn("공통8H", width="small"),
+                    "과목1_온라인4H": st.column_config.CheckboxColumn("1-온라인", width="small"),
+                    "과목1_감독자4H": st.column_config.CheckboxColumn("1-감독자", width="small"),
+                    "과목2_온라인4H": st.column_config.CheckboxColumn("2-온라인", width="small"),
+                    "과목2_감독자4H": st.column_config.CheckboxColumn("2-감독자", width="small")
+                }
+            )
+            if st.form_submit_button("명부 수정사항 적용"):
+                st.session_state.df_final[view_cols] = edited_df
+                if "main_editor_sidebar" in st.session_state:
+                    del st.session_state["main_editor_sidebar"]
+                st.rerun()
 
 # ==========================================
 # [메인 화면] 계산 및 대시보드
