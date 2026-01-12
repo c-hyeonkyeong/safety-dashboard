@@ -5,16 +5,14 @@ from github import Github
 import io
 
 # --- [1. 시스템 설정] ---
-# initial_sidebar_state="expanded"로 설정하여 처음엔 열려있게 함
 st.set_page_config(page_title="안전보건 대시보드 Pro", layout="wide", page_icon="🛡️", initial_sidebar_state="expanded")
 
-# CSS: PC 사이드바 너비를 450px로 조정하되, '닫힘' 상태를 방해하지 않도록 수정
+# CSS: PC 사이드바 너비 조정
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold; color: #31333F;}
     div.stButton > button {width: 100%; border-radius: 6px;}
     
-    /* PC 화면 (너비 992px 이상)에서, 사이드바가 '열려 있을 때'만 너비 고정 */
     @media (min-width: 992px) {
         section[data-testid="stSidebar"][aria-expanded="true"] {
             min-width: 450px !important;
@@ -162,7 +160,7 @@ with st.sidebar:
             st.session_state.clear()
             st.rerun()
             
-    # 1. GitHub 설정 (접이식)
+    # 1. GitHub 설정
     with st.expander("☁️ GitHub 연동 설정", expanded=False):
         GITHUB_TOKEN = st.text_input("🔑 GitHub 토큰", type="password")
         REPO_NAME = st.text_input("📂 레포지토리 (user/repo)")
@@ -246,13 +244,12 @@ with st.sidebar:
                     st.error("데이터 없음")
 
     with col_btn3:
-         # 상단 저장 버튼 (중복 편의성)
          pass
 
     st.divider()
 
     # -----------------------------------------------
-    # 2. 부서 및 교육 매핑 설정 (접이식)
+    # 2. 부서 및 교육 매핑 설정
     # -----------------------------------------------
     with st.expander("🛠️ 부서 및 교육 매핑 설정", expanded=False):
         with st.popover("📂 설정 파일 업로드"):
@@ -295,7 +292,7 @@ with st.sidebar:
                 st.rerun()
 
     # -----------------------------------------------
-    # 3. 근로자 명부 관리 (접이식)
+    # 3. 근로자 명부 관리 (여기서 form 제거하여 실시간 반영)
     # -----------------------------------------------
     with st.expander("📝 근로자 명부 관리", expanded=False):
         with st.popover("📂 명부 파일 등록 (Excel/CSV)"):
@@ -315,7 +312,7 @@ with st.sidebar:
                             st.rerun()
                 except Exception as e: st.error(str(e))
 
-        st.caption("특수검진 제외는 여기서 체크 해제 후 [명부 수정사항 적용] 클릭")
+        st.info("명부 수정 후 엔터/클릭 시 자동 저장됩니다. 그 후 상단 [저장하기]를 누르세요.")
         
         view_cols = [
             '직책', '성명', '부서', '입사일', '퇴사여부', 
@@ -324,43 +321,42 @@ with st.sidebar:
             '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H'
         ]
 
-        with st.form("worker_main_form"):
-            edited_df = st.data_editor(
-                st.session_state.df_final[view_cols],
-                num_rows="dynamic",
-                use_container_width=True,
-                key="main_editor_sidebar",
-                column_config={
-                    "퇴사여부": st.column_config.CheckboxColumn("퇴사", default=False, width="small"),
-                    "특수검진_대상": st.column_config.CheckboxColumn("검진대상", default=True, width="small"),
-                    "성명": st.column_config.TextColumn("성명", width="medium"),
-                    "직책": st.column_config.SelectboxColumn("직책", options=ROLES, width="medium"),
-                    "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST, width="medium"),
-                    "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                    "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                    "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                    "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES),
-                    "신규교육_이수": st.column_config.CheckboxColumn("신규이수", width="small"),
-                    "공통8H": st.column_config.CheckboxColumn("공통8H", width="small"),
-                    "과목1_온라인4H": st.column_config.CheckboxColumn("1-온라인", width="small"),
-                    "과목1_감독자4H": st.column_config.CheckboxColumn("1-감독자", width="small"),
-                    "과목2_온라인4H": st.column_config.CheckboxColumn("2-온라인", width="small"),
-                    "과목2_감독자4H": st.column_config.CheckboxColumn("2-감독자", width="small")
-                }
-            )
-            if st.form_submit_button("명부 수정사항 적용"):
-                # [수정됨] 행 추가/삭제를 반영하기 위해 df_final 전체를 교체
-                st.session_state.df_final = edited_df.copy().reset_index(drop=True)
-                
-                # 날짜 컬럼 형식 재보장 (오류 방지)
-                date_cols_fix = ['입사일', '최근_직무교육일', '최근_특수검진일']
-                for col in date_cols_fix:
-                    if col in st.session_state.df_final.columns:
-                        st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce')
+        # [수정] st.form을 제거하고 data_editor의 변경사항을 즉시 감지하여 반영
+        edited_df = st.data_editor(
+            st.session_state.df_final[view_cols],
+            num_rows="dynamic",
+            use_container_width=True,
+            key="main_editor_sidebar",
+            column_config={
+                "퇴사여부": st.column_config.CheckboxColumn("퇴사", default=False, width="small"),
+                "특수검진_대상": st.column_config.CheckboxColumn("검진대상", default=True, width="small"),
+                "성명": st.column_config.TextColumn("성명", width="medium"),
+                "직책": st.column_config.SelectboxColumn("직책", options=ROLES, width="medium"),
+                "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST, width="medium"),
+                "입사일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                "최근_직무교육일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                "최근_특수검진일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                "검진단계": st.column_config.SelectboxColumn(options=HEALTH_PHASES),
+                "신규교육_이수": st.column_config.CheckboxColumn("신규이수", width="small"),
+                "공통8H": st.column_config.CheckboxColumn("공통8H", width="small"),
+                "과목1_온라인4H": st.column_config.CheckboxColumn("1-온라인", width="small"),
+                "과목1_감독자4H": st.column_config.CheckboxColumn("1-감독자", width="small"),
+                "과목2_온라인4H": st.column_config.CheckboxColumn("2-온라인", width="small"),
+                "과목2_감독자4H": st.column_config.CheckboxColumn("2-감독자", width="small")
+            }
+        )
 
-                if "main_editor_sidebar" in st.session_state:
-                    del st.session_state["main_editor_sidebar"]
-                st.rerun()
+        # [수정] 데이터 변경 감지 시 즉시 세션 업데이트 (자동 동기화)
+        if not edited_df.equals(st.session_state.df_final[view_cols]):
+            st.session_state.df_final = edited_df.copy().reset_index(drop=True)
+            
+            # 날짜 컬럼 형식 재보장
+            date_cols_fix = ['입사일', '최근_직무교육일', '최근_특수검진일']
+            for col in date_cols_fix:
+                if col in st.session_state.df_final.columns:
+                    st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce')
+            
+            st.rerun()
 
 
 # ==========================================
