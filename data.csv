@@ -11,7 +11,7 @@
 김경미,일반근로자,재무팀,2021-01-25,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 김근영,일반근로자,출하Part,2024-11-18,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 김기정,일반근로자,PC생산,2024-01-22,,False,False,1차검진 완료(다음:6개월),2025-08-25,True,False,False,False,False,False,False,True,False,False,False
-김기태,일반근로자,프로젝트사업팀,2023-11-27,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
+김기태,일반근로자,프로젝트사업팀,2023-11-27,,False,False,,,False,True,False,False,False,False,False,False,False,False,False
 김기훈,일반근로자,PLC Group,2024-11-04,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 김나영,일반근로자,PC생산,2025-09-01,,False,False,1차검진 완료(다음:6개월),2025-09-08,True,False,False,False,False,False,False,True,False,False,False
 김동현,일반근로자,제어기기영업팀,2021-02-08,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
@@ -73,7 +73,7 @@
 심경만,일반근로자,수처리사업부,2025-11-03,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 심희정,일반근로자,품질보증팀,2023-11-22,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 안경옥,일반근로자,PLC생산,2009-06-02,,False,False,1차검진 완료(다음:6개월),2025-08-21,True,False,False,False,False,False,False,True,False,False,False
-안영애,일반근로자,환경실,2004-10-01,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
+안영애,일반근로자,환경실,2004-10-01,,False,False,,,False,True,False,False,False,False,False,False,False,False,False
 안재봉,일반근로자,대표이사,1999-05-17,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 안재훈,일반근로자,경영기획팀,2021-09-01,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 오경훈,일반근로자,부산사무소,2019-11-25,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
@@ -96,17 +96,17 @@
 이정은,일반근로자,해외사업담당,2017-10-10,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 임남식,일반근로자,PC생산,2011-01-01,,False,False,1차검진 완료(다음:6개월),2025-08-22,True,False,False,False,False,False,False,True,False,False,False
 임노송,일반근로자,수처리사업부,2020-12-16,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
-임동환,일반근로자,수처리사업부,2023-05-02,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
+임동환,일반근로자,수처리사업부,2023-05-02,,False,False,,,False,True,False,False,False,False,False,False,False,False,False
 임승현,관리감독자,배전사업실,2014-03-04,2025-11-03,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 임찬영,일반근로자,배전개발팀,2010-03-11,,False,False,정기검진(다음:1년),2025-11-10,True,False,False,False,False,False,False,True,False,True,False
 임철수,일반근로자,수처리사업부,2023-06-01,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
-장국식,일반근로자,환경실,2004-10-01,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
+장국식,일반근로자,환경실,2004-10-01,,False,False,,,False,True,False,False,False,False,False,False,False,False,False
 장윤석,일반근로자,전략경영기획실,2008-01-28,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 장재석,관리감독자,기술연구소,2010-11-15,2025-11-03,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 장재용,일반근로자,프로젝트사업실,2007-01-02,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 전도현,일반근로자,SCADA Group,2016-05-18,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 전상준,일반근로자,Platform Group,2024-02-26,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
-전영재,일반근로자,제어기기영업팀,2025-03-10,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
+전영재,일반근로자,제어기기영업팀,2025-03-10,,False,False,,,False,True,False,False,False,False,False,False,False,False,False
 정성택,일반근로자,교육&마케팅팀,2016-06-27,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 정용재,일반근로자,HMI Group,2024-10-02,,False,False,,,False,False,False,False,False,False,False,False,False,False,False
 정유나,일반근로자,PC생산,2024-10-15,,False,False,1차검진 완료(다음:6개월),2025-08-21,True,False,False,False,False,False,False,True,False,False,False
