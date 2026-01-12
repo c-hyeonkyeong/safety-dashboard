@@ -147,16 +147,15 @@ DEPTS_LIST = list(st.session_state.dept_config_final['부서명'])
 
 
 # ==========================================
-# [사이드바] 통합 메뉴
+# [사이드바 UI 구성 - 순서 중요!]
 # ==========================================
 with st.sidebar:
     st.header("⚙️ 통합 관리자 메뉴")
     
-    # [핵심 수정] UI 순서와 코드 실행 순서를 분리합니다.
-    # 상단에 위치할 메뉴들을 위한 빈 공간(Placeholder)을 미리 만들어둡니다.
-    # 코드는 아래에서 실행되지만, 화면에는 여기(맨 위)에 그려집니다.
-    top_menu_placeholder = st.container()
-    
+    # [중요 1] 여기에 '저장 버튼'이 들어갈 빈 공간(Placeholder)만 미리 만들어둡니다.
+    # 실제 코드는 맨 아래에서 실행되어, 데이터가 최신화된 후 저장되게 합니다.
+    sidebar_top_placeholder = st.container()
+
     st.divider()
 
     # -----------------------------------------------
@@ -203,7 +202,7 @@ with st.sidebar:
                 st.rerun()
 
     # -----------------------------------------------
-    # 3. 근로자 명부 관리 (여기서 데이터를 업데이트함)
+    # 3. 근로자 명부 관리 (여기서 데이터가 업데이트 됩니다!)
     # -----------------------------------------------
     with st.expander("📝 근로자 명부 관리", expanded=False):
         with st.popover("📂 명부 파일 등록 (Excel/CSV)"):
@@ -223,7 +222,7 @@ with st.sidebar:
                             st.rerun()
                 except Exception as e: st.error(str(e))
 
-        st.info("명부 수정 후 엔터/클릭 시 자동 반영됩니다.")
+        st.info("💡 명부 수정 후 엔터나 다른 곳을 클릭하면 자동 반영됩니다.")
         
         view_cols = [
             '직책', '성명', '부서', '입사일', '퇴사여부', 
@@ -232,7 +231,7 @@ with st.sidebar:
             '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H'
         ]
 
-        # [수정] st.form 없이 즉시 수정 반영
+        # [중요 2] st.form을 제거하고 data_editor가 변경사항을 즉시 감지하도록 함
         edited_df = st.data_editor(
             st.session_state.df_final[view_cols],
             num_rows="dynamic",
@@ -257,121 +256,122 @@ with st.sidebar:
             }
         )
 
-        # [핵심] 에디터에 변경이 생기면 df_final을 업데이트 (저장 로직 실행 전에 반영됨!)
+        # [중요 3] 변경이 감지되면 session_state.df_final을 업데이트 (저장 코드 실행 전!)
         if not edited_df.equals(st.session_state.df_final[view_cols]):
             st.session_state.df_final = edited_df.copy().reset_index(drop=True)
             
-            # 날짜 컬럼 형식 재보장
+            # 날짜 형식 재보장
             date_cols_fix = ['입사일', '최근_직무교육일', '최근_특수검진일']
             for col in date_cols_fix:
                 if col in st.session_state.df_final.columns:
                     st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce')
             st.rerun()
 
-    # -----------------------------------------------
-    # [핵심 해결책] 
-    # 이제 df_final이 최신 상태이므로, 여기서 상단 메뉴(저장/불러오기) 코드를 실행합니다.
-    # 하지만 화면에는 미리 만들어둔 'top_menu_placeholder' 위치(맨 위)에 나타납니다.
-    # -----------------------------------------------
-    with top_menu_placeholder:
-        col_btn1, col_btn2, col_btn3 = st.columns(3)
-        
-        with col_btn1:
-            if st.button("🔄 새로고침", type="primary"):
-                st.cache_data.clear()
-                st.session_state.clear()
-                st.rerun()
-                
-        # 1. GitHub 설정
-        with st.expander("☁️ GitHub 연동 설정", expanded=False):
-            GITHUB_TOKEN = st.text_input("🔑 GitHub 토큰", type="password")
-            REPO_NAME = st.text_input("📂 레포지토리 (user/repo)")
-            DATA_FILE = "data.csv"
-            CONFIG_FILE = "config.csv"
+# ==========================================
+# [GitHub 저장/불러오기 로직 - 코드의 맨 마지막에 위치]
+# ==========================================
+# [중요 4] 위에서 데이터를 다 업데이트한 후, 이제 저장 로직을 실행합니다.
+# 하지만 화면에는 아까 만들어둔 'sidebar_top_placeholder' (맨 위)에 나타나게 합니다.
 
-            def get_github_repo():
-                if not GITHUB_TOKEN or not REPO_NAME: return None
-                try: return Github(GITHUB_TOKEN).get_repo(REPO_NAME)
-                except: return None
+with sidebar_top_placeholder:
+    col_btn1, col_btn2, col_btn3 = st.columns(3)
+    
+    with col_btn1:
+        if st.button("🔄 새로고침", type="primary"):
+            st.cache_data.clear()
+            st.session_state.clear()
+            st.rerun()
+            
+    with st.expander("☁️ GitHub 연동 설정", expanded=False):
+        GITHUB_TOKEN = st.text_input("🔑 GitHub 토큰", type="password")
+        REPO_NAME = st.text_input("📂 레포지토리 (user/repo)")
+        DATA_FILE = "data.csv"
+        CONFIG_FILE = "config.csv"
 
-            def save_all_to_github(data_df, config_df):
-                repo = get_github_repo()
-                if not repo: 
-                    st.error("토큰 필요")
-                    return
-                try:
-                    save_df = data_df.copy()
-                    date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일', '다음_직무교육일', '다음_특수검진일']
-                    for col in date_cols:
-                        if col in save_df.columns:
-                            save_df[col] = save_df[col].apply(lambda x: x.strftime('%Y-%m-%d') if not pd.isna(x) else '')
+        def get_github_repo():
+            if not GITHUB_TOKEN or not REPO_NAME: return None
+            try: return Github(GITHUB_TOKEN).get_repo(REPO_NAME)
+            except: return None
 
-                    data_content = save_df.to_csv(index=False)
-                    try:
-                        contents = repo.get_contents(DATA_FILE)
-                        repo.update_file(DATA_FILE, f"Update data: {datetime.now()}", data_content, contents.sha)
-                    except:
-                        repo.create_file(DATA_FILE, "Init data", data_content)
-                    
-                    config_content = config_df.to_csv(index=False)
-                    try:
-                        contents = repo.get_contents(CONFIG_FILE)
-                        repo.update_file(CONFIG_FILE, f"Update config: {datetime.now()}", config_content, contents.sha)
-                    except:
-                        repo.create_file(CONFIG_FILE, "Init config", config_content)
-                    st.toast("✅ 저장 완료!", icon="☁️")
-                except Exception as e:
-                    st.error(f"저장 실패: {e}")
+        def save_all_to_github(data_df, config_df):
+            repo = get_github_repo()
+            if not repo: 
+                st.error("토큰 필요")
+                return
+            try:
+                save_df = data_df.copy()
+                date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일', '다음_직무교육일', '다음_특수검진일']
+                for col in date_cols:
+                    if col in save_df.columns:
+                        save_df[col] = save_df[col].apply(lambda x: x.strftime('%Y-%m-%d') if not pd.isna(x) else '')
 
-            def load_all_from_github():
-                repo = get_github_repo()
-                if not repo: return None, None
-                loaded_data, loaded_config = None, None
+                data_content = save_df.to_csv(index=False)
                 try:
                     contents = repo.get_contents(DATA_FILE)
-                    csv_string = contents.decoded_content.decode("utf-8")
-                    loaded_data = pd.read_csv(io.StringIO(csv_string))
-                    
-                    date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
-                    for col in date_cols:
-                        if col in loaded_data.columns:
-                            loaded_data[col] = pd.to_datetime(loaded_data[col].astype(str), errors='coerce')
-                    
-                    if '검진단계' not in loaded_data.columns: loaded_data['검진단계'] = "배치전(미실시)"
-                    else: loaded_data['검진단계'] = loaded_data['검진단계'].fillna("배치전(미실시)")
-
-                except: pass
+                    repo.update_file(DATA_FILE, f"Update data: {datetime.now()}", data_content, contents.sha)
+                except:
+                    repo.create_file(DATA_FILE, "Init data", data_content)
+                
+                config_content = config_df.to_csv(index=False)
                 try:
                     contents = repo.get_contents(CONFIG_FILE)
-                    csv_string = contents.decoded_content.decode("utf-8")
-                    loaded_config = pd.read_csv(io.StringIO(csv_string))
-                    loaded_config = sanitize_config_df(loaded_config)
-                except: pass
-                return loaded_data, loaded_config
+                    repo.update_file(CONFIG_FILE, f"Update config: {datetime.now()}", config_content, contents.sha)
+                except:
+                    repo.create_file(CONFIG_FILE, "Init config", config_content)
+                st.toast("✅ GitHub에 저장 완료!", icon="☁️")
+            except Exception as e:
+                st.error(f"저장 실패: {e}")
 
-            col_s1, col_s2 = st.columns(2)
-            with col_s1:
-                if st.button("📂 불러오기"):
-                    ld, lc = load_all_from_github()
-                    if ld is not None: 
-                        st.session_state.df_final = ld
-                        st.toast("로드 완료!", icon="✅")
-                    if lc is not None: st.session_state.dept_config_final = lc
-                    st.rerun()
-            with col_s2:
-                if st.button("💾 저장하기"):
-                    # 여기가 실행될 때는 이미 위쪽의 df_final 업데이트가 끝난 상태임!
-                    if 'df_final' in st.session_state and 'dept_config_final' in st.session_state:
-                        save_all_to_github(st.session_state.df_final, st.session_state.dept_config_final)
-                    else:
-                        st.error("데이터 없음")
+        def load_all_from_github():
+            repo = get_github_repo()
+            if not repo: return None, None
+            loaded_data, loaded_config = None, None
+            try:
+                contents = repo.get_contents(DATA_FILE)
+                csv_string = contents.decoded_content.decode("utf-8")
+                loaded_data = pd.read_csv(io.StringIO(csv_string))
+                
+                date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
+                for col in date_cols:
+                    if col in loaded_data.columns:
+                        loaded_data[col] = pd.to_datetime(loaded_data[col].astype(str), errors='coerce')
+                
+                if '검진단계' not in loaded_data.columns: loaded_data['검진단계'] = "배치전(미실시)"
+                else: loaded_data['검진단계'] = loaded_data['검진단계'].fillna("배치전(미실시)")
 
-        with col_btn3:
-             pass
+            except: pass
+            try:
+                contents = repo.get_contents(CONFIG_FILE)
+                csv_string = contents.decoded_content.decode("utf-8")
+                loaded_config = pd.read_csv(io.StringIO(csv_string))
+                loaded_config = sanitize_config_df(loaded_config)
+            except: pass
+            return loaded_data, loaded_config
+
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            if st.button("📂 불러오기"):
+                ld, lc = load_all_from_github()
+                if ld is not None: 
+                    st.session_state.df_final = ld
+                    st.toast("로드 완료!", icon="✅")
+                if lc is not None: st.session_state.dept_config_final = lc
+                st.rerun()
+        with col_s2:
+            if st.button("💾 저장하기"):
+                # [확인] 이 버튼은 코드가 맨 아래에 있으므로, 
+                # 위쪽의 edited_df 업데이트가 끝난 최신 df_final을 사용합니다.
+                if 'df_final' in st.session_state and 'dept_config_final' in st.session_state:
+                    save_all_to_github(st.session_state.df_final, st.session_state.dept_config_final)
+                else:
+                    st.error("데이터 없음")
+    
+    with col_btn3:
+        pass
 
 
 # ==========================================
-# [메인 화면] 계산 및 대시보드
+# [메인 화면 대시보드 로직]
 # ==========================================
 
 df = st.session_state.df_final.copy()
