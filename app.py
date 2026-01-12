@@ -349,7 +349,15 @@ with st.sidebar:
                 }
             )
             if st.form_submit_button("명부 수정사항 적용"):
-                st.session_state.df_final[view_cols] = edited_df
+                # [수정됨] 행 추가/삭제를 반영하기 위해 df_final 전체를 교체
+                st.session_state.df_final = edited_df.copy().reset_index(drop=True)
+                
+                # 날짜 컬럼 형식 재보장 (오류 방지)
+                date_cols_fix = ['입사일', '최근_직무교육일', '최근_특수검진일']
+                for col in date_cols_fix:
+                    if col in st.session_state.df_final.columns:
+                        st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col], errors='coerce')
+
                 if "main_editor_sidebar" in st.session_state:
                     del st.session_state["main_editor_sidebar"]
                 st.rerun()
