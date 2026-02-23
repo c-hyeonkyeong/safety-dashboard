@@ -33,6 +33,30 @@ SPECIAL_EDU_OPTIONS = [
 ROLES = ["안전보건관리책임자", "관리감독자", "폐기물담당자", "일반근로자"]
 HEALTH_PHASES = ["배치전(미실시)", "1차검진 완료(다음:6개월)", "정기검진(다음:1년)"]
 
+# 💡 핵심 해결책: 데이터 타입을 강제로 정리하여 Streamlit의 정렬 차단을 막는 함수
+def enforce_dtypes(df):
+    df_out = df.copy()
+    
+    # 1. 날짜 타입 강제 지정
+    date_cols_list = ['입사일', '최근_직무교육일', '최근_특수검진일']
+    for c in date_cols_list:
+        if c in df_out.columns:
+            df_out[c] = pd.to_datetime(df_out[c], errors='coerce')
+            
+    # 2. 체크박스(Boolean) 타입 강제 지정
+    bool_cols_list = ['퇴사여부', '특수검진_대상', '신규교육_이수', '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H']
+    for c in bool_cols_list:
+        if c in df_out.columns:
+            df_out[c] = df_out[c].fillna(False).astype(bool)
+            
+    # 3. 글자(문자열) 타입 강제 지정
+    str_cols_list = ['성명', '직책', '부서', '검진단계']
+    for c in str_cols_list:
+        if c in df_out.columns:
+            df_out[c] = df_out[c].fillna("").astype(str)
+            
+    return df_out
+
 def sanitize_config_df(df):
     target_cols = ['특별교육과목1', '특별교육과목2']
     for col in target_cols:
@@ -97,19 +121,8 @@ if 'df_final' not in st.session_state:
     }
     st.session_state.df_final = pd.DataFrame(data)
 
-# 날짜/체크박스 타입 보장
-date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
-for col in date_cols:
-    if col in st.session_state.df_final.columns:
-        st.session_state.df_final[col] = pd.to_datetime(st.session_state.df_final[col].astype(str), errors='coerce')
-
-bool_cols = ['퇴사여부', '특수검진_대상', '신규교육_이수', '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H']
-for col in bool_cols:
-    if col not in st.session_state.df_final.columns:
-        default_val = True if col == '특수검진_대상' else False
-        st.session_state.df_final[col] = default_val
-    else:
-        st.session_state.df_final[col] = st.session_state.df_final[col].fillna(False).astype(bool)
+# 초기화 시 확실하게 데이터 타입 정돈
+st.session_state.df_final = enforce_dtypes(st.session_state.df_final)
 
 # 2. 관리자 설정 초기화 (dept_config_final)
 if 'dept_config_final' not in st.session_state:
@@ -193,12 +206,8 @@ with st.sidebar:
                 contents = repo.get_contents(DATA_FILE)
                 csv_string = contents.decoded_content.decode("utf-8")
                 loaded_data = pd.read_csv(io.StringIO(csv_string))
-                date_cols = ['입사일', '최근_직무교육일', '최근_특수검진일']
-                for col in date_cols:
-                    if col in loaded_data.columns:
-                        loaded_data[col] = pd.to_datetime(loaded_data[col].astype(str), errors='coerce')
+                loaded_data = enforce_dtypes(loaded_data) # 로드 시 타입 고정
                 if '검진단계' not in loaded_data.columns: loaded_data['검진단계'] = "배치전(미실시)"
-                else: loaded_data['검진단계'] = loaded_data['검진단계'].fillna("배치전(미실시)")
             except: pass
             try:
                 contents = repo.get_contents(CONFIG_FILE)
@@ -269,7 +278,7 @@ with st.sidebar:
     # [3. 근로자 명부 관리]
     # -----------------------------------------------
     with st.expander("📝 근로자 명부 관리", expanded=False):
-        # 파일 업로드 (여기서 행 추가 가능)
+        # 파일 업로드 시 발생하는 타입 오류 원천 차단
         with st.popover("📂 명부 파일 등록 (Excel/CSV)"):
             up_file = st.file_uploader("파일 선택", type=['csv', 'xlsx'], key="worker_up")
             if up_file:
@@ -283,11 +292,14 @@ with st.sidebar:
                             if '특수검진_대상' in new_df.columns:
                                 new_df['특수검진_대상'] = new_df['특수검진_대상'].fillna(True).astype(bool)
                             else: new_df['특수검진_대상'] = True
-                            st.session_state.df_final = pd.concat([st.session_state.df_final, new_df[st.session_state.df_final.columns]], ignore_index=True)
+                            
+                            merged_df = pd.concat([st.session_state.df_final, new_df[st.session_state.df_final.columns]], ignore_index=True)
+                            # 파일 병합 후 망가진 데이터를 다시 엄격하게 정리
+                            st.session_state.df_final = enforce_dtypes(merged_df)
                             st.rerun()
                 except Exception as e: st.error(str(e))
 
-        st.caption("💡 상단의 열 제목을 누르면 정렬됩니다. 수정 후 [명부 수정사항 적용]을 꼭 눌러주세요.")
+        st.caption("💡 표 상단의 열 이름('성명' 등)을 클릭하면 정렬됩니다.")
         
         view_cols = [
             '직책', '성명', '부서', '입사일', '퇴사여부', 
@@ -296,16 +308,18 @@ with st.sidebar:
             '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H'
         ]
 
+        # 표를 띄우기 직전, 만약을 대비해 다시 한 번 데이터 타입을 강제로 조입니다.
+        st.session_state.df_final = enforce_dtypes(st.session_state.df_final)
+
         with st.form("worker_main_form"):
-            # 🚨 3가지 핵심 수정 완료: 1) hide_index=True 추가, 2) num_rows="dynamic" 완전 삭제, 3) width="small" 삭제
             edited_df = st.data_editor(
                 st.session_state.df_final[view_cols],
                 hide_index=True, 
                 use_container_width=True,
                 key="main_editor_sidebar",
                 column_config={
-                    "퇴사여부": st.column_config.CheckboxColumn("퇴사", default=False),
-                    "특수검진_대상": st.column_config.CheckboxColumn("검진대상", default=True),
+                    "퇴사여부": st.column_config.CheckboxColumn("퇴사"),
+                    "특수검진_대상": st.column_config.CheckboxColumn("검진대상"),
                     "성명": st.column_config.TextColumn("성명"),
                     "직책": st.column_config.SelectboxColumn("직책", options=ROLES),
                     "부서": st.column_config.SelectboxColumn("부서", options=DEPTS_LIST),
@@ -328,19 +342,9 @@ with st.sidebar:
                 
                 hidden_df = st.session_state.df_final[hidden_cols].reindex(edited_df.index)
                 new_final_df = pd.concat([edited_df, hidden_df], axis=1)
-                new_final_df = new_final_df[all_cols]
                 
-                date_cols_fix = ['입사일', '최근_직무교육일', '최근_특수검진일']
-                for col in date_cols_fix:
-                    if col in new_final_df.columns:
-                        new_final_df[col] = pd.to_datetime(new_final_df[col], errors='coerce')
-                
-                bool_cols_fix = ['퇴사여부', '특수검진_대상', '신규교육_이수', '공통8H', '과목1_온라인4H', '과목1_감독자4H', '과목2_온라인4H', '과목2_감독자4H']
-                for col in bool_cols_fix:
-                    if col in new_final_df.columns:
-                        new_final_df[col] = new_final_df[col].fillna(False).astype(bool)
-
-                st.session_state.df_final = new_final_df.reset_index(drop=True)
+                # 저장할 때도 완벽한 형태로 저장
+                st.session_state.df_final = enforce_dtypes(new_final_df).reset_index(drop=True)
                 
                 if "main_editor_sidebar" in st.session_state:
                     del st.session_state["main_editor_sidebar"]
@@ -357,10 +361,6 @@ today = date.today()
 if '성명' in df.columns:
     df = df.dropna(subset=['성명'])
     df = df[df['성명'].astype(str).str.strip() != '']
-
-for col in ['입사일', '최근_직무교육일', '최근_특수검진일']:
-    if col in df.columns: 
-        df[col] = pd.to_datetime(df[col], errors='coerce')
 
 df['특별교육_과목1'] = df['부서'].map(DEPT_S1).fillna("설정필요")
 df['특별교육_과목2'] = df['부서'].map(DEPT_S2).fillna("해당없음")
