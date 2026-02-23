@@ -266,7 +266,7 @@ with st.sidebar:
                 st.rerun()
 
     # -----------------------------------------------
-    # [3. 근로자 명부 관리 - 정렬 기능 포함]
+    # [3. 근로자 명부 관리]
     # -----------------------------------------------
     with st.expander("📝 근로자 명부 관리", expanded=False):
         # 파일 업로드
@@ -287,22 +287,8 @@ with st.sidebar:
                             st.rerun()
                 except Exception as e: st.error(str(e))
 
+        st.info("💡 **Tip:** 표 상단의 열 제목('성명', '직책' 등)을 마우스로 클릭하시면 원하는 기준으로 손쉽게 정렬해서 보실 수 있습니다.")
         st.caption("특수검진 제외는 여기서 체크 해제 후 [명부 수정사항 적용] 클릭")
-
-        # --- 명부 정렬 설정 ---
-        st.write("▼ 명부 정렬 설정")
-        sort_c1, sort_c2, sort_c3 = st.columns([2, 2, 1])
-        with sort_c1:
-            sort_col = st.selectbox("정렬 기준", options=['성명', '입사일', '부서', '직책'], label_visibility="collapsed")
-        with sort_c2:
-            sort_order = st.radio("정렬 방식", options=["오름차순", "내림차순"], horizontal=True, label_visibility="collapsed")
-        with sort_c3:
-            if st.button("정렬 적용", use_container_width=True):
-                is_asc = (sort_order == "오름차순")
-                # 원본 데이터를 정렬하고 인덱스를 초기화하여 에디터 오류 방지
-                st.session_state.df_final = st.session_state.df_final.sort_values(by=sort_col, ascending=is_asc).reset_index(drop=True)
-                st.rerun()
-        st.markdown("---")
         
         view_cols = [
             '직책', '성명', '부서', '입사일', '퇴사여부', 
@@ -355,7 +341,6 @@ with st.sidebar:
                     if col in new_final_df.columns:
                         new_final_df[col] = new_final_df[col].fillna(False).astype(bool)
 
-                # 수정사항 저장할 때도 인덱스를 초기화해서 깔끔하게 유지합니다
                 st.session_state.df_final = new_final_df.reset_index(drop=True)
                 
                 if "main_editor_sidebar" in st.session_state:
