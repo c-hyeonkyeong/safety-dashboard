@@ -300,7 +300,7 @@ with st.sidebar:
         with st.form("worker_main_form"):
             edited_df = st.data_editor(
                 st.session_state.df_final[view_cols],
-                num_rows="dynamic",
+                # 💡 num_rows="dynamic" 삭제됨 - 이제 열 제목 클릭 정렬이 활성화됩니다!
                 use_container_width=True,
                 key="main_editor_sidebar",
                 column_config={
